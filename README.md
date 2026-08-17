@@ -45,7 +45,37 @@ A vision-tracking, IMU-stabilized blimp controlled wirelessly from a keyboard, b
 
 - Camera: OV-series module wired per `Vision.h` pin map (XCLK=10, PCLK=13, VSYNC=38, HREF=47, SIOD=40, SIOC=39, D0–D7 as defined), status LED on GPIO 21.
 - IMU: MPU6050 on I²C, SDA=5, SCL=6, address `0x68`.
+- Current CAD Model: https://cad.onshape.com/documents/6abb47ea8df48ed88ff41eff/w/fc873cead17ca65b0af647cb/e/1d23eafa7f8f630fb687ec6b
 
+- Notes:
+  PSRAM is required — the camera frame buffer lives in PSRAM; everything else (mask buffer, flood-fill stack, threshold LUT) lives in internal SRAM. See Memory layout below.
+
+**Calibrating the color mask**
+
+1. Flash `Calibrate/Calibrate.ino` onto the Xiao ESP32S3.
+2. Keep the board connected to the computer over USB.
+3. Run `Calibrate/Calibrate.py` on the computer. A window should open showing the default mask applied live.
+4. Adjust the mask with the following keys:
+   | Parameter | Decrease | Increase |
+   |---|---|---|
+   | `L_min` | `1` | `Q` |
+   | `L_max` | `2` | `W` |
+   | `A_min` | `3` | `E` |
+   | `A_max` | `4` | `R` |
+   | `B_min` | `5` | `T` |
+   | `B_max` | `6` | `Y` |
+5. Every adjustment prints the current mask values to the terminal.
+6. The default starting mask lives in `Calibrate/Calibrate..py` (lines 14–16) —
+   edit it there if you want a different starting point for future calibration runs.
+
+**Applying a calibrated mask to the detector**
+
+Edit `src\vision.h` Line 90:
+
+```cpp
+static const LabThreshold THRESHOLD_BLIMP = { l_min, l_max, a_min, a_max, b_min, b_max };
+```
+  
 **Base station ESP32**
 
 - Any ESP32 board with USB serial to the PC. No sensors — it's purely a bridge.
