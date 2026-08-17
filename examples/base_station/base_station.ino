@@ -3,7 +3,7 @@
 #include <esp_wifi.h>
 
 // REPLACE WITH YOUR BLIMP MAC ADDRESS
-uint8_t blimpAddress[] = {0x68, 0xee, 0x8f, 0x50, 0x1f, 0x08};
+uint8_t blimpAddress[] = {0x68, 0xee, 0x8f, 0x50, 0x26, 0xd0};
 
 typedef struct __attribute__((packed)) {
   int16_t motors[4];

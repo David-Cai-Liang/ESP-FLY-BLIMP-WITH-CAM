@@ -29,9 +29,9 @@ uint8_t currentMode = MODE_MANUAL;
 // Deadzone is a 40x40 px box centered on the frame; only the x-extent (+/-20px)
 // is used since this controller only corrects yaw (left/right).
 const int YAW_DEADZONE_HALF_PX = 40;     // half-width of the 40px-wide deadzone
-const int YAW_GAIN = 1;                  // motor power added per pixel of x error
+const float YAW_GAIN = 0.5;                  // motor power added per pixel of x error
 const int MOTOR_MAX = 255;               // analogWrite() PWM ceiling (8-bit default)
-const int DEFAULT_FORWARD_POWER = 80;
+const int DEFAULT_FORWARD_POWER = 20;
 const int DEFAULT_UPWARD_POWER = 20;
 
 // const float TURN_RATE_SETTLE
@@ -168,9 +168,9 @@ void loop() {
         if (abs(error_x) > YAW_DEADZONE_HALF_PX) {
           int correction = (abs(error_x) - YAW_DEADZONE_HALF_PX) * YAW_GAIN;
           if (error_x > 0) {
-            m4 -= correction; // target right of center -> yaw right by cutting M3 (Rear Left)
+            m1 -= correction; // target right of center -> yaw right by cutting M1 (Rear Left)
           } else {
-            m1 -= correction; // target left of center  -> yaw left  by cutting M2 (Rear Right)
+            m4 -= correction; // target left of center  -> yaw left  by cutting M4 (Rear Right)
           }
         }
       }
@@ -203,11 +203,13 @@ void loop() {
         }
         }
       }
+      */
       else {
         // may add wiggle search if tracking is not good enough
         // As distance traveled from last waypoint increases, the wiggle angle should increase proportionally.
+          
       }
-    */
+
   }
   }
 
