@@ -72,7 +72,7 @@ def init_keyboard_window():
     This same window also mirrors whatever gets printed to the terminal.
     """
     global screen, status_font
-    screen = pygame.display.set_mode((760, 170))
+    screen = pygame.display.set_mode((1200, 100))
     pygame.display.set_caption("Base Station Controls (click here for keyboard focus)")
     pygame.key.set_repeat(0)  # disabled: we want press edges, not OS key-repeat
     status_font = pygame.font.SysFont("consolas,couriernew,monospace", 16)
@@ -263,6 +263,7 @@ def main():
 
     buffer = bytearray()
     last_control_time = 0
+    status_printed = False  # tracks whether the 3-line status block exists yet
 
     # Latency tracking variables
     last_frame_time = None
@@ -336,7 +337,7 @@ def main():
                         telemetry_line = (
                             f"[TELEMETRY] Motors: {actual_motors} || "
                             f"Vision: CX:{cx:3d} CY:{cy:3d} W:{w:3d} H:{h:3d} || "
-                            f"IMU: AX:{ax:5.1f} AY:{ay:5.1f} AZ:{az:5.1f}"
+                            f"IMU: AX:{ax:5.1f} AY:{ay:5.1f} AZ:{az:5.1f} TZ:{tz:5.1f}"
                         )
                         command_line = (
                             f"[COMMAND] Mode: {MODE_NAMES[current_mode]:<21} || Motors: {command_motors}"
@@ -346,13 +347,19 @@ def main():
                             f"Rate: {fps:4.1f} FPS | Queue: {ser.in_waiting}B"
                         )
 
-                        # Terminal display
+                        # Terminal display: redraw the 3-line block in place.
+                        # Once the block has been printed once, jump the
+                        # cursor back up to its top-left corner before
+                        # rewriting all three lines so nothing scrolls.
+                        if status_printed:
+                            sys.stdout.write("\033[3A")
                         sys.stdout.write(
                             f"\r\033[K{telemetry_line}\n"
                             f"\r\033[K{command_line}\n"
-                            f"\r\033[K{latency_line}\033[A"
+                            f"\r\033[K{latency_line}\n"
                         )
                         sys.stdout.flush()
+                        status_printed = True
 
                         # pygame window display (same three lines)
                         render_status([telemetry_line, command_line, latency_line])

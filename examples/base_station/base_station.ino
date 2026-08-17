@@ -1,8 +1,9 @@
 #include <esp_now.h>
 #include <WiFi.h>
+#include <esp_wifi.h>
 
 // REPLACE WITH YOUR BLIMP MAC ADDRESS
-uint8_t blimpAddress[] = {0x68, 0xee, 0x8f, 0x50, 0x1e, 0xa0};
+uint8_t blimpAddress[] = {0x68, 0xee, 0x8f, 0x50, 0x1f, 0x08};
 
 typedef struct __attribute__((packed)) {
   int16_t motors[4];
@@ -43,8 +44,14 @@ void OnDataSent(const wifi_tx_info_t *info, esp_now_send_status_t status) {
 void setup() {
   Serial.begin(115200);
   WiFi.mode(WIFI_STA);
+  WiFi.disconnect();
+  esp_wifi_set_channel(1, WIFI_SECOND_CHAN_NONE);
 
-  if (esp_now_init() != ESP_OK) return;
+  // Initialize ESP-NOW
+  if (esp_now_init() != ESP_OK) {
+    Serial.println("Error initializing ESP-NOW");
+    return;
+  }
 
   esp_now_register_recv_cb(OnDataRecv);
   esp_now_register_send_cb(OnDataSent);
@@ -54,7 +61,10 @@ void setup() {
   memcpy(peerInfo.peer_addr, blimpAddress, 6);
   peerInfo.channel = 0;
   peerInfo.encrypt = false;
-  esp_now_add_peer(&peerInfo);
+  if (esp_now_add_peer(&peerInfo) != ESP_OK) {
+    Serial.println("Failed to add Base Station peer");
+    return;
+  }
 }
 
 void loop() {

@@ -87,9 +87,9 @@ void OnDataRecv(const esp_now_recv_info_t *esp_now_info, const uint8_t *incoming
 
 void setup() {
   Serial.begin(115200);
-
-  // Set device in Wi-Fi Station Mode
   WiFi.mode(WIFI_STA);
+  WiFi.disconnect();
+  esp_wifi_set_channel(1, WIFI_SECOND_CHAN_NONE);
 
   // Initialize ESP-NOW
   if (esp_now_init() != ESP_OK) {
@@ -159,7 +159,7 @@ void loop() {
       // TODO: update closeEnough to reasonable values; maybe create a guidance.cpp/.h
       bool target_visible = (vData.w > 0 && vData.h > 0);
 
-      // bool closeEnough = (vData.w > 180 && vData.h > 180);
+      bool closeEnough = (vData.w > 180 && vData.h > 180);
 
       if (!closeEnough && target_visible) {
         int center_x = MAX_W / 2;                 // 320 / 2 = 160
@@ -207,8 +207,8 @@ void loop() {
         // may add wiggle search if tracking is not good enough
         // As distance traveled from last waypoint increases, the wiggle angle should increase proportionally.
       }
-    }
     */
+  }
   }
 
   m1 = constrain(m1, 0, MOTOR_MAX);
