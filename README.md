@@ -103,9 +103,9 @@ The 32-byte telemetry payload is `cx, cy, w, h` (4x `uint16`), `ax, ay, az, tz` 
 ## Calibrating Vision Model
 **Calibrating the color mask**
 
-1. Flash `Calibrate/Calibrate.ino` onto the Xiao ESP32S3.
+1. Flash `calibrate/calibrate.ino` onto the Xiao ESP32S3.
 2. Keep the board connected to the computer over USB.
-3. Run `Calibrate/Calibrate.py` on the computer. A window should open showing the default mask applied live.
+3. Run `calibrate/calibrate.py` on the computer. A window should open showing the default mask applied live.
 4. Adjust the mask with the following keys:
    | Parameter | Decrease | Increase |
    |---|---|---|
