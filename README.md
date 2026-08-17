@@ -49,32 +49,6 @@ A vision-tracking, IMU-stabilized blimp controlled wirelessly from a keyboard, b
 
 - Notes:
   PSRAM is required — the camera frame buffer lives in PSRAM; everything else (mask buffer, flood-fill stack, threshold LUT) lives in internal SRAM. See Memory layout below.
-
-**Calibrating the color mask**
-
-1. Flash `Calibrate/Calibrate.ino` onto the Xiao ESP32S3.
-2. Keep the board connected to the computer over USB.
-3. Run `Calibrate/Calibrate.py` on the computer. A window should open showing the default mask applied live.
-4. Adjust the mask with the following keys:
-   | Parameter | Decrease | Increase |
-   |---|---|---|
-   | `L_min` | `1` | `Q` |
-   | `L_max` | `2` | `W` |
-   | `A_min` | `3` | `E` |
-   | `A_max` | `4` | `R` |
-   | `B_min` | `5` | `T` |
-   | `B_max` | `6` | `Y` |
-5. Every adjustment prints the current mask values to the terminal.
-6. The default starting mask lives in `Calibrate/Calibrate..py` (lines 14–16) —
-   edit it there if you want a different starting point for future calibration runs.
-
-**Applying a calibrated mask to the detector**
-
-Edit `src\vision.h` Line 90:
-
-```cpp
-static const LabThreshold THRESHOLD_BLIMP = { l_min, l_max, a_min, a_max, b_min, b_max };
-```
   
 **Base station ESP32**
 
@@ -126,6 +100,33 @@ The 32-byte telemetry payload is `cx, cy, w, h` (4x `uint16`), `ax, ay, az, tz` 
 
 `base_station.py` re-syncs to the header on every parse pass, so it tolerates dropped/partial bytes on the serial line.
 
+## Calibrating Vision Model
+**Calibrating the color mask**
+
+1. Flash `Calibrate/Calibrate.ino` onto the Xiao ESP32S3.
+2. Keep the board connected to the computer over USB.
+3. Run `Calibrate/Calibrate.py` on the computer. A window should open showing the default mask applied live.
+4. Adjust the mask with the following keys:
+   | Parameter | Decrease | Increase |
+   |---|---|---|
+   | `L_min` | `1` | `Q` |
+   | `L_max` | `2` | `W` |
+   | `A_min` | `3` | `E` |
+   | `A_max` | `4` | `R` |
+   | `B_min` | `5` | `T` |
+   | `B_max` | `6` | `Y` |
+5. Every adjustment prints the current mask values to the terminal.
+6. The default starting mask lives in `Calibrate/Calibrate..py` (lines 14–16) —
+   edit it there if you want a different starting point for future calibration runs.
+
+**Applying a calibrated mask to the detector**
+
+Edit `src\vision.h` Line 90:
+
+```cpp
+static const LabThreshold THRESHOLD_BLIMP = { l_min, l_max, a_min, a_max, b_min, b_max };
+```
+
 ## Setup
 
 ### 1. Flash the firmware (Arduino IDE / arduino-cli)
@@ -142,7 +143,7 @@ Required libraries: `esp_now`, `WiFi`, `esp_camera` (ESP32 board package), `Adaf
 ### 2. Run the ground control script
 
 ```bash
-pip install pyserial pynput
+pip install pyserial pygame
 python base_station.py
 ```
 
@@ -152,15 +153,15 @@ Edit `SERIAL_PORT` at the top of `base_station.py` first (e.g. `COM9` on Windows
 
 | Key | Effect |
 |---|---|
-| `W` | +50 to M2 and M3 |
-| `A` | +50 to M3 |
-| `D` | +50 to M2 |
-| `Q` | +50 to M4 |
-| `E` | +50 to M1 |
+| `W` | +50 to M1 and M4 |
+| `A` | +50 to M4 |
+| `D` | +50 to M1 |
+| `Q` | +50 to M3 |
+| `E` | +50 to M2 |
 | `M` | Toggle control mode: `MANUAL` ⇄ `AUTONOMOUS` (yaw-only, see below) |
 | `Ctrl+C` | Stop — sends an all-zero, forced-`MANUAL` motor command and exits |
 
-M2 carries a constant idle offset  even with no keys held (see `compute_motors()`); every other motor idles at `0`. `M` toggles on the key-down edge only (holding it or OS key-repeat won't rapidly flip modes), and the script starts in `MANUAL` every time it launches, regardless of what mode the blimp was last left in.
+M2 carries a constant idle offset even with no keys held (see `compute_motors()`); every other motor idles at `0`. `M` toggles on the key-down edge only (holding it or OS key-repeat won't rapidly flip modes), and the script starts in `MANUAL` every time it launches, regardless of what mode the blimp was last left in.
 
 The terminal shows live commanded motor state and control mode, the blimp's tracked vision blob (center/box), IMU readings, the blimp's actual motor outputs (unpacked from telemetry into `actual_motors`), and round-trip telemetry latency/FPS. On exit it prints a benchmark summary (frame count, average delta, jitter, throughput).
 
