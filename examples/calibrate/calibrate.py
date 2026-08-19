@@ -5,7 +5,7 @@ import struct
 import pygame
 import sys
 
-SERIAL_PORT = 'COM8'
+SERIAL_PORT = 'COM35'
 BAUD_RATE = 115200
 
 MAGIC_HEADER = b'\xff\xaa\x55\xff'

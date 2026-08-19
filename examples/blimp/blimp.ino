@@ -1,3 +1,12 @@
+// === Camera compile-time switch =============================================
+// use_camera = 1: current behavior — camera is initialized and polled every
+//                  loop, and telemetry carries real VisionData from the sensor.
+// use_camera = 0: all camera code is bypassed (no Vision object, no setup(),
+//                  no processFrame()/buildVisionData() calls); vData is left
+//                  zero-initialized, so telemetry reports [0,0,0,0] for
+//                  cx, cy, w, h every loop.
+#define use_camera 1
+
 #include <Vision.h>
 #define sensor_t adafruit_sensor_t
 #include <IMU.h>
@@ -41,6 +50,8 @@ const int DEFAULT_UPWARD_POWER = 20;
 // const float TURN_KP
 
 // REPLACE WITH YOUR BASE STATION MAC ADDRESS
+// {0x30, 0x30, 0xF9, 0x17, 0xFB, 0x8C}
+// {0xdc, 0xda, 0x0c, 0x57, 0x56, 0x0c}
 uint8_t baseStationAddress[] = {0x30, 0x30, 0xF9, 0x17, 0xFB, 0x8C};
 
 // Telemetry sent from Blimp to Base Station
@@ -57,7 +68,9 @@ typedef struct __attribute__((packed)) {
 } ControlPacket;
 
 esp_now_peer_info_t peerInfo;
+#if use_camera
 Vision vision;
+#endif
 IMU imu;
 
 ControlPacket incomingControl = {{0, 0, 0, 0}};
@@ -114,17 +127,22 @@ void setup() {
 
   // Initialize Sensors and Camera Hardware
   imu.setup();
+#if use_camera
   vision.setup();
+#endif
 }
 
 void loop() {
   // 1. Process Vision & IMU Telemetry
-  FrameResult result = vision.processFrame();
-  VisionData vData = {};
+  VisionData vData = {}; // zero-initialized: cx, cy, w, h all 0
 
+#if use_camera
+  FrameResult result = vision.processFrame();
   if (result.valid) {
     vData = vision.buildVisionData(result.blob);
   }
+#endif
+  // use_camera == 0: camera is bypassed entirely; vData stays [0,0,0,0].
 
   IMUData iData = imu.readData();
 
