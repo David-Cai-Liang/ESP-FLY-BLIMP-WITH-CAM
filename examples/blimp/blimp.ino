@@ -49,6 +49,16 @@ const int DEFAULT_UPWARD_POWER = 20;
 // const float TURN_KD
 // const float TURN_KP
 
+// Wiggle-search tuning (used in MODE_PROPORTIONAL when the target isn't
+// visible). Noise amplitude ramps up the longer the search has been running,
+// so early wiggles are gentle and later ones sweep harder in case the target
+// has drifted far off-frame (or the blimp has drifted far from the last
+// known bearing).
+// const unsigned long WIGGLE_RAMP_MS = 5000;      // ms of searching to reach full amplitude
+// const unsigned long WIGGLE_PERIOD_MS = 2000;    // ms per full left-right sweep cycle
+// const int WIGGLE_MIN_AMPLITUDE     = 10;        // starting sweep amplitude (PWM units)
+// const int WIGGLE_MAX_AMPLITUDE     = MOTOR_MAX; // amplitude stops growing past this
+
 // REPLACE WITH YOUR BASE STATION MAC ADDRESS
 // {0x30, 0x30, 0xF9, 0x17, 0xFB, 0x8C}
 // {0xdc, 0xda, 0x0c, 0x57, 0x56, 0x0c}
@@ -79,6 +89,13 @@ volatile bool newControlAvailable = false;
 volatile unsigned long lastRecvTime = 0;
 const unsigned long CONTROL_TIMEOUT_MS = 1000;
 
+// Wiggle-search state: when the target drops out of view, we start a timer
+// so the search amplitude can grow the longer it's been lost. Reset as soon
+// as the target is visible again.
+// bool wiggleSearchActive = false;
+// unsigned long wiggleSearchStartMs = 0;
+// unsigned long wigglePhaseOffsetMs = 0; // randomized per-search so sweeps don't repeat identically
+
 // Callback when telemetry is sent to Base Station
 void OnDataSent(const wifi_tx_info_t *info, esp_now_send_status_t status) {
   if (status != ESP_NOW_SEND_SUCCESS) {
@@ -100,6 +117,7 @@ void OnDataRecv(const esp_now_recv_info_t *esp_now_info, const uint8_t *incoming
 
 void setup() {
   Serial.begin(115200);
+  randomSeed(esp_random()); // hardware RNG seed, used by the wiggle search
   WiFi.mode(WIFI_STA);
   WiFi.disconnect();
   esp_wifi_set_channel(1, WIFI_SECOND_CHAN_NONE);
@@ -222,12 +240,40 @@ void loop() {
         }
       }
       */
-      else {
-        // may add wiggle search if tracking is not good enough
-        // As distance traveled from last waypoint increases, the wiggle angle should increase proportionally.
-          
-      }
+      // else {
+      //   // Wiggle search: target isn't visible, so sweep yaw with a smooth
+      //   // sine wave while continuing to fly forward. The sweep amplitude
+      //   // ramps up the longer the search has been running (i.e. the longer
+      //   // we've gone without a fix), so we start with small nudges and
+      //   // escalate to wider sweeps the farther/longer we've been searching
+      //   // blind. A randomized phase offset keeps successive searches from
+      //   // sweeping the exact same way every time.
+      //   if (!wiggleSearchActive) {
+      //     wiggleSearchActive = true;
+      //     wiggleSearchStartMs = millis();
+      //     wigglePhaseOffsetMs = random(0, WIGGLE_PERIOD_MS);
+      //   }
 
+      //   unsigned long searchElapsedMs = millis() - wiggleSearchStartMs;
+      //   float rampFraction = (float)searchElapsedMs / (float)WIGGLE_RAMP_MS;
+      //   rampFraction = constrain(rampFraction, 0.0, 1.0);
+
+      //   int amplitude = WIGGLE_MIN_AMPLITUDE +
+      //                   (int)(rampFraction * (WIGGLE_MAX_AMPLITUDE - WIGGLE_MIN_AMPLITUDE));
+
+      //   // Phase advances steadily with elapsed time, one full sweep every
+      //   // WIGGLE_PERIOD_MS; sin() gives a smooth back-and-forth rather than
+      //   // the jitter of fresh-random-every-loop noise.
+      //   unsigned long phaseMs = (searchElapsedMs + wigglePhaseOffsetMs) % WIGGLE_PERIOD_MS;
+      //   float phase = 2.0 * PI * (float)phaseMs / (float)WIGGLE_PERIOD_MS;
+      //   int sweep = (int)(amplitude * sin(phase));
+
+      //   if (sweep >= 0) {
+      //     m1 -= sweep; // yaw right
+      //   } else {
+      //     m4 -= (-sweep); // yaw left
+      //   }
+      // }
   }
   }
 
