@@ -5,7 +5,7 @@
 //                  no processFrame()/buildVisionData() calls); vData is left
 //                  zero-initialized, so telemetry reports [0,0,0,0] for
 //                  cx, cy, w, h every loop.
-#define use_camera 1
+#define use_camera 0
 
 #include <Vision.h>
 #define sensor_t adafruit_sensor_t
@@ -61,7 +61,9 @@ const int DEFAULT_UPWARD_POWER = 20;
 
 // REPLACE WITH YOUR BASE STATION MAC ADDRESS
 // {0x30, 0x30, 0xF9, 0x17, 0xFB, 0x8C}
+// {0x30, 0x30, 0xf9, 0x16, 0xa1, 0x0c}
 // {0xdc, 0xda, 0x0c, 0x57, 0x56, 0x0c}
+
 uint8_t baseStationAddress[] = {0x30, 0x30, 0xF9, 0x17, 0xFB, 0x8C};
 
 // Telemetry sent from Blimp to Base Station
