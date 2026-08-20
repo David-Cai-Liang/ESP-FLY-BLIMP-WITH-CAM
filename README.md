@@ -36,12 +36,12 @@ A vision-tracking, IMU-stabilized blimp controlled wirelessly from a keyboard, b
 
 **Blimp ESP32 (ESP-FLY board)**
 
-| Motor | Function | GPIO |
-|---|---|---|
-| M1 | Front Right | 7 |
-| M2 | Rear Right | 4 |
-| M3 | Rear Left | 3 |
-| M4 | Front Left | 1 |
+| Motor | Function | GPIO | Propeller
+|---|---|---| --- |
+| M1 | Front Right | 7 | CCW
+| M2 | Rear Right | 4 | CCW
+| M3 | Rear Left | 3 | CW
+| M4 | Front Left | 1 | CW
 
 - Camera: OV-series module wired per `Vision.h` pin map (XCLK=10, PCLK=13, VSYNC=38, HREF=47, SIOD=40, SIOC=39, D0–D7 as defined), status LED on GPIO 21.
 - IMU: MPU6050 on I²C, SDA=5, SCL=6, address `0x68`.
@@ -51,11 +51,15 @@ A vision-tracking, IMU-stabilized blimp controlled wirelessly from a keyboard, b
     - https://www.balloonsdirect.com/36-inch-round-foil-balloons-sapphire-blue
     - https://bargainballoons.com/products/36-inches-navy-blue-round-packaged-oaktree-brand-foil-balloon-ot-608320
     - https://bargainballoons.com/products/36-inches-pure-gold-round-packaged-oaktree-brand-foil-balloon-ot-608290
-
-- Current CAD Model: https://cad.onshape.com/documents/6abb47ea8df48ed88ff41eff/w/fc873cead17ca65b0af647cb/e/1d23eafa7f8f630fb687ec6b
-
+- Frame
+  Material:
+  - PLA
+  Current CAD Model:
+  - https://cad.onshape.com/documents/6abb47ea8df48ed88ff41eff/w/fc873cead17ca65b0af647cb/e/1d23eafa7f8f630fb687ec6b
 - Notes:
   PSRAM is required — the camera frame buffer lives in PSRAM; everything else (mask buffer, flood-fill stack, threshold LUT) lives in internal SRAM. See Memory layout below.
+  The rear motors are rotated clockwise in the +x-axis (AKA when looking from the back) relative to their PCB pads.
+
 
 **Base station ESP32**
 
