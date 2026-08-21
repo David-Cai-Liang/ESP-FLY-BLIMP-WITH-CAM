@@ -146,7 +146,7 @@ void setup() {
 
 void loop() {
   // 1. Process Vision & IMU Telemetry
-  VisionData vData = {}; // zero-initialized: cx, cy, w, h all 0
+  VisionData vData = {}; // zero-initialized: all 0
 
 #if use_camera
   FrameResult result = vision.processFrame();
@@ -172,10 +172,10 @@ void loop() {
     // Drive motors directly from the base station's ControlPacket.
     // Watchdog: if no packet has arrived within CONTROL_TIMEOUT_MS, force zero.
     newControlAvailable = false;
-    m1 = stale ? 0 : incomingControl.motors[0];
+    m1 = stale ? 0 : incomingControl.motors[0] + Kyaw * iData.tz;
     m2 = stale ? 0 : incomingControl.motors[1];
     m3 = stale ? 0 : incomingControl.motors[2];
-    m4 = stale ? 0 : incomingControl.motors[3];
+    m4 = stale ? 0 : incomingControl.motors[3] - Kyaw * iData.tz;
 
   } else { // MODE_PROPORTIONAL
     // Manual stick input is ignored in this mode.
