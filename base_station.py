@@ -17,8 +17,11 @@ TELEMETRY_HEADER = b"\x00\xAA\x55\xFF"
 TELEMETRY_FOOTER = b"\xEE\xFF"
 CONTROL_HEADER = b"\x00\xBB\x66\xFF"
 
-PAYLOAD_SIZE = 32  # 4x uint16 (8B) + 4x float (16B) + 4x int16 actual motors (8B)
-TOTAL_FRAME_SIZE = 4 + PAYLOAD_SIZE + 2  # 30 Bytes Total Frame
+PAYLOAD_SIZE = 36  # 4x uint16 (8B) + 4x float (16B) + 4x int16 actual motors (8B) + 1x float yaw error (4B)
+TOTAL_FRAME_SIZE = 4 + PAYLOAD_SIZE + 2  # 34 Bytes Total Frame
+
+# Yaw-to-target is now computed on the blimp (see blimp.ino: HORIZONTAL_FOV_DEG /
+# DEG_PER_PIXEL / yawError) and arrives as part of the telemetry payload below.
 
 # Control modes (must match blimp.ino's MODE_MANUAL / MODE_PROPORTIONAL)
 MODE_MANUAL = 0
@@ -327,7 +330,9 @@ def main():
                         avg_dt = sum(frame_deltas) / len(frame_deltas) if frame_deltas else 0.0
                         fps = 1000.0 / avg_dt if avg_dt > 0 else 0.0
 
-                        cx, cy, w, h, ax, ay, az, tz, m1, m2, m3, m4 = struct.unpack("<4H4f4h", raw_payload)
+                        cx, cy, w, h, ax, ay, az, tz, m1, m2, m3, m4, yaw_err = struct.unpack(
+                            "<4H4f4hf", raw_payload
+                        )
                         # actual_motors is the feedback from the last command;
                         # command_motors is the new command if it exists
                         actual_motors = [m1, m2, m3, m4]
@@ -336,7 +341,7 @@ def main():
                         # the terminal and the pygame window.
                         telemetry_line = (
                             f"[TELEMETRY] Motors: {actual_motors} || "
-                            f"Vision: CX:{cx:3d} CY:{cy:3d} W:{w:3d} H:{h:3d} || "
+                            f"Vision: CX:{cx:3d} CY:{cy:3d} W:{w:3d} H:{h:3d} Yaw:{yaw_err:+5.1f}deg || "
                             f"IMU: AX:{ax:5.1f} AY:{ay:5.1f} AZ:{az:5.1f} TZ:{tz:5.1f}"
                         )
                         command_line = (

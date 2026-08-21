@@ -38,26 +38,24 @@ uint8_t currentMode = MODE_MANUAL;
 // Deadzone is a 40x40 px box centered on the frame; only the x-extent (+/-20px)
 // is used since this controller only corrects yaw (left/right).
 const int YAW_DEADZONE_HALF_PX = 40;     // half-width of the 40px-wide deadzone
-const float YAW_GAIN = 0.5;                  // motor power added per pixel of x error
+const float YAW_GAIN = 0.5;              // motor power added per degree of x error
 const int MOTOR_MAX = 255;               // analogWrite() PWM ceiling (8-bit default)
 const int DEFAULT_FORWARD_POWER = 20;
 const int DEFAULT_UPWARD_POWER = 20;
 
-// const float TURN_RATE_SETTLE
-// const float TURN_DEADBAND_DEG
-// const float TURN_MAX_POWER
-// const float TURN_KD
-// const float TURN_KP
+// Camera geometry: degrees of yaw needed to center a target on the x-axis.
+// Simple flat model — every pixel subtends an equal slice of the horizontal
+// FOV. A more accurate model (accounting for lens distortion) can replace
+// this later without changing the telemetry layout.
+const float HORIZONTAL_FOV_DEG = 57.4;                    // camera's horizontal field of view
+const float DEG_PER_PIXEL = HORIZONTAL_FOV_DEG / MAX_W;   // MAX_W (320) comes from Vision.h
 
-// Wiggle-search tuning (used in MODE_PROPORTIONAL when the target isn't
-// visible). Noise amplitude ramps up the longer the search has been running,
-// so early wiggles are gentle and later ones sweep harder in case the target
-// has drifted far off-frame (or the blimp has drifted far from the last
-// known bearing).
-// const unsigned long WIGGLE_RAMP_MS = 5000;      // ms of searching to reach full amplitude
-// const unsigned long WIGGLE_PERIOD_MS = 2000;    // ms per full left-right sweep cycle
-// const int WIGGLE_MIN_AMPLITUDE     = 10;        // starting sweep amplitude (PWM units)
-// const int WIGGLE_MAX_AMPLITUDE     = MOTOR_MAX; // amplitude stops growing past this
+// Degree-equivalents of the pixel-based yaw tuning above, so the P
+// controller now runs on yawError (degrees) instead of raw pixel error.
+// Values are derived from YAW_DEADZONE_HALF_PX / YAW_GAIN so existing
+// tuning carries over; adjust these directly in degrees going forward.
+const float YAW_DEADZONE_HALF_DEG = YAW_DEADZONE_HALF_PX * DEG_PER_PIXEL; // ~7.2 deg
+const float YAW_GAIN_PER_DEG = YAW_GAIN / DEG_PER_PIXEL;                  // motor power per degree of error
 
 // REPLACE WITH YOUR BASE STATION MAC ADDRESS
 // {0x30, 0x30, 0xF9, 0x17, 0xFB, 0x8C}
@@ -71,6 +69,7 @@ typedef struct __attribute__((packed)) {
   VisionData vision; // cx, cy, w, h (4 x uint16_t)
   IMUData imu;       // ax, ay, az, tz (4 x float)
   MotorData motors;  // actual, post-constrain M1-M4 outputs (4 x int16_t)
+  float yawError;    // degrees of yaw needed to center the target (+ => target is right of center)
 } TelemetryPacket;
 
 // Motor control commands received from Base Station
@@ -90,13 +89,6 @@ volatile bool newControlAvailable = false;
 
 volatile unsigned long lastRecvTime = 0;
 const unsigned long CONTROL_TIMEOUT_MS = 1000;
-
-// Wiggle-search state: when the target drops out of view, we start a timer
-// so the search amplitude can grow the longer it's been lost. Reset as soon
-// as the target is visible again.
-// bool wiggleSearchActive = false;
-// unsigned long wiggleSearchStartMs = 0;
-// unsigned long wigglePhaseOffsetMs = 0; // randomized per-search so sweeps don't repeat identically
 
 // Callback when telemetry is sent to Base Station
 void OnDataSent(const wifi_tx_info_t *info, esp_now_send_status_t status) {
@@ -166,6 +158,11 @@ void loop() {
 
   IMUData iData = imu.readData();
 
+  // Degrees of yaw needed to bring the target's blob center to the middle
+  // of the frame. Computed every loop (not just in PROPORTIONAL mode) so
+  // it's always available in telemetry for monitoring/tuning.
+  float yawError = ((float)vData.cx - (MAX_W / 2.0f)) * DEG_PER_PIXEL;
+
   bool stale = (millis() - lastRecvTime > CONTROL_TIMEOUT_MS);
 
   // 2. Compute Motor Outputs for the active control mode
@@ -200,82 +197,18 @@ void loop() {
       bool closeEnough = (vData.w > 180 && vData.h > 180);
 
       if (!closeEnough && target_visible) {
-        int center_x = MAX_W / 2;                 // 320 / 2 = 160
-        int error_x  = (int)vData.cx - center_x;   // + => target is right of center
-
-        if (abs(error_x) > YAW_DEADZONE_HALF_PX) {
-          int correction = (abs(error_x) - YAW_DEADZONE_HALF_PX) * YAW_GAIN;
-          if (error_x > 0) {
+        // yawError (degrees, computed above) replaces the old pixel-space
+        // center_x/error_x calc — same P controller, just working in
+        // degrees instead of pixels.
+        if (fabs(yawError) > YAW_DEADZONE_HALF_DEG) {
+          int correction = (int)((fabs(yawError) - YAW_DEADZONE_HALF_DEG) * YAW_GAIN_PER_DEG);
+          if (yawError > 0) {
             m1 -= correction; // target right of center -> yaw right by cutting M1 (Rear Left)
           } else {
             m4 -= correction; // target left of center  -> yaw left  by cutting M4 (Rear Right)
           }
         }
       }
-      /*Go into IMU-Based Waypoint Mode 
-      else if (closeEnough) {
-        Turn using the rotation data for next waypoint: waypoint_list[next]
-        next=(next+1)%waypoint_num
-        float turnedSoFar = 0;
-        while (!stale && abs(turnedSoFar - waypoint_list[next].angle) > TURN_DEADBAND_DEG) {
-          stale = (millis() - lastRecvTime > CONTROL_TIMEOUT_MS);
-          float rate = imu.readData().tz - gyroBiasDegPerSec;
-          float error = wrap180(waypoint_list[next].angle - turnedSoFar);
-
-            // Preliminary PID
-            float turnPower = TURN_KP * error - TURN_KD * yawRate;
-            turnPower = constrain(turnPower, -TURN_MAX_POWER, TURN_MAX_POWER);
-
-            if (turnPower >= 0) {        // need to yaw right: m1 up, m4 down
-              m1 = constrain((int)turnPower, 0, MOTOR_MAX);
-              m4 = 0;
-            } else {                     // need to yaw left: m4 up, m1 down
-              m4 = constrain((int)-turnPower, 0, MOTOR_MAX);
-              m1 = 0;
-            }
-            m2 = 0; m3 = 0;  // no lift/forward thrust during a turn — minimizes drift off-station
-
-          if (abs(error) <= TURN_DEADBAND_DEG && abs(rate) <= TURN_RATE_SETTLE) {
-            closeEnough = false;
-            distanceTraveled = 0;
-        }
-        }
-      }
-      */
-      // else {
-      //   // Wiggle search: target isn't visible, so sweep yaw with a smooth
-      //   // sine wave while continuing to fly forward. The sweep amplitude
-      //   // ramps up the longer the search has been running (i.e. the longer
-      //   // we've gone without a fix), so we start with small nudges and
-      //   // escalate to wider sweeps the farther/longer we've been searching
-      //   // blind. A randomized phase offset keeps successive searches from
-      //   // sweeping the exact same way every time.
-      //   if (!wiggleSearchActive) {
-      //     wiggleSearchActive = true;
-      //     wiggleSearchStartMs = millis();
-      //     wigglePhaseOffsetMs = random(0, WIGGLE_PERIOD_MS);
-      //   }
-
-      //   unsigned long searchElapsedMs = millis() - wiggleSearchStartMs;
-      //   float rampFraction = (float)searchElapsedMs / (float)WIGGLE_RAMP_MS;
-      //   rampFraction = constrain(rampFraction, 0.0, 1.0);
-
-      //   int amplitude = WIGGLE_MIN_AMPLITUDE +
-      //                   (int)(rampFraction * (WIGGLE_MAX_AMPLITUDE - WIGGLE_MIN_AMPLITUDE));
-
-      //   // Phase advances steadily with elapsed time, one full sweep every
-      //   // WIGGLE_PERIOD_MS; sin() gives a smooth back-and-forth rather than
-      //   // the jitter of fresh-random-every-loop noise.
-      //   unsigned long phaseMs = (searchElapsedMs + wigglePhaseOffsetMs) % WIGGLE_PERIOD_MS;
-      //   float phase = 2.0 * PI * (float)phaseMs / (float)WIGGLE_PERIOD_MS;
-      //   int sweep = (int)(amplitude * sin(phase));
-
-      //   if (sweep >= 0) {
-      //     m1 -= sweep; // yaw right
-      //   } else {
-      //     m4 -= (-sweep); // yaw left
-      //   }
-      // }
   }
   }
 
@@ -290,6 +223,7 @@ void loop() {
   telemetry.vision = vData;
   telemetry.imu = iData;
   telemetry.motors = buildMotorData(m1, m2, m3, m4);
+  telemetry.yawError = yawError;
 
   esp_err_t sendResult = esp_now_send(baseStationAddress, (uint8_t *)&telemetry, sizeof(telemetry));
   if (sendResult != ESP_OK) {
