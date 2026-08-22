@@ -46,13 +46,26 @@ const float HORIZONTAL_FOV_DEG = 57.4;                    // camera's horizontal
 const float DEG_PER_PIXEL = HORIZONTAL_FOV_DEG / MAX_W;   // MAX_W (320) comes from Vision.h
 const float YAW_DEADZONE_HALF_DEG = 5;
 const float YAW_GAIN_PER_DEG = 3;                  // motor power per degree of error
-const float KDYAW = 25; 
+const float TURN_KD = 25;
+// const float TURN_RATE_SETTLE
+// const float TURN_DEADBAND_DEG
+// const float TURN_MAX_POWER 
+// const float TURN_KP
+
+// Wiggle-search tuning (used in MODE_PROPORTIONAL when the target isn't
+// visible). Noise amplitude ramps up the longer the search has been running,
+// so early wiggles are gentle and later ones sweep harder in case the target
+// has drifted far off-frame (or the blimp has drifted far from the last
+// known bearing).
+// const unsigned long WIGGLE_RAMP_MS = 5000;      // ms of searching to reach full amplitude
+// const unsigned long WIGGLE_PERIOD_MS = 2000;    // ms per full left-right sweep cycle
+// const int WIGGLE_MIN_AMPLITUDE     = 10;        // starting sweep amplitude (PWM units)
+// const int WIGGLE_MAX_AMPLITUDE     = MOTOR_MAX; // amplitude stops growing past this
 
 // REPLACE WITH YOUR BASE STATION MAC ADDRESS
 // {0x30, 0x30, 0xF9, 0x17, 0xFB, 0x8C}
 // {0x30, 0x30, 0xf9, 0x16, 0xa1, 0x0c}
 // {0xdc, 0xda, 0x0c, 0x57, 0x56, 0x0c}
-
 uint8_t baseStationAddress[] = {0x30, 0x30, 0xF9, 0x17, 0xFB, 0x8C};
 
 // Telemetry sent from Blimp to Base Station
@@ -163,10 +176,10 @@ void loop() {
     // Drive motors directly from the base station's ControlPacket.
     // Watchdog: if no packet has arrived within CONTROL_TIMEOUT_MS, force zero.
     newControlAvailable = false;
-    m1 = stale ? 0 : incomingControl.motors[0] - KDYAW * iData.tz;
+    m1 = stale ? 0 : incomingControl.motors[0] - TURN_KD * iData.tz;
     m2 = stale ? 0 : incomingControl.motors[1];
     m3 = stale ? 0 : incomingControl.motors[2];
-    m4 = stale ? 0 : incomingControl.motors[3] + KDYAW * iData.tz;
+    m4 = stale ? 0 : incomingControl.motors[3] + TURN_KD * iData.tz;
 
   } else { // MODE_PROPORTIONAL
     // Manual stick input is ignored in this mode.
@@ -195,11 +208,77 @@ void loop() {
           int correction = (int)((fabs(yawError) - YAW_DEADZONE_HALF_DEG) * YAW_GAIN_PER_DEG);
           if (yawError > 0) {
             m1 -= correction; // target right of center -> yaw right by cutting M1 (Rear Left)
+            m1 -= TURN_KD * iData.tz;
           } else {
             m4 -= correction; // target left of center  -> yaw left  by cutting M4 (Rear Right)
+            m4 += TURN_KD * iData.tz;
           }
         }
       }
+      /* Go into IMU-Based Waypoint Mode 
+      else if (closeEnough) {
+        Turn using the rotation data for next waypoint: waypoint_list[next]
+        next=(next+1)%waypoint_num
+        float turnedSoFar = 0;
+        while (!stale && abs(turnedSoFar - waypoint_list[next].angle) > TURN_DEADBAND_DEG) {
+          stale = (millis() - lastRecvTime > CONTROL_TIMEOUT_MS);
+          float rate = imu.readData().tz - gyroBiasDegPerSec;
+          float error = wrap180(waypoint_list[next].angle - turnedSoFar);
+
+            // Preliminary PID
+            float turnPower = TURN_KP * error - TURN_KD * yawRate;
+            turnPower = constrain(turnPower, -TURN_MAX_POWER, TURN_MAX_POWER);
+
+            if (turnPower >= 0) {        // need to yaw right: m1 up, m4 down
+              m1 = constrain((int)turnPower, 0, MOTOR_MAX);
+              m4 = 0;
+            } else {                     // need to yaw left: m4 up, m1 down
+              m4 = constrain((int)-turnPower, 0, MOTOR_MAX);
+              m1 = 0;
+            }
+            m2 = 0; m3 = 0;  // no lift/forward thrust during a turn — minimizes drift off-station
+
+          if (abs(error) <= TURN_DEADBAND_DEG && abs(rate) <= TURN_RATE_SETTLE) {
+            closeEnough = false;
+            distanceTraveled = 0;
+        }
+        }
+      }
+      else {
+        // Wiggle search: target isn't visible, so sweep yaw with a smooth
+        // sine wave while continuing to fly forward. The sweep amplitude
+        // ramps up the longer the search has been running (i.e. the longer
+        // we've gone without a fix), so we start with small nudges and
+        // escalate to wider sweeps the farther/longer we've been searching
+        // blind. A randomized phase offset keeps successive searches from
+        // sweeping the exact same way every time.
+        if (!wiggleSearchActive) {
+          wiggleSearchActive = true;
+          wiggleSearchStartMs = millis();
+          wigglePhaseOffsetMs = random(0, WIGGLE_PERIOD_MS);
+        }
+
+        unsigned long searchElapsedMs = millis() - wiggleSearchStartMs;
+        float rampFraction = (float)searchElapsedMs / (float)WIGGLE_RAMP_MS;
+        rampFraction = constrain(rampFraction, 0.0, 1.0);
+
+        int amplitude = WIGGLE_MIN_AMPLITUDE +
+                        (int)(rampFraction * (WIGGLE_MAX_AMPLITUDE - WIGGLE_MIN_AMPLITUDE));
+
+        // Phase advances steadily with elapsed time, one full sweep every
+        // WIGGLE_PERIOD_MS; sin() gives a smooth back-and-forth rather than
+        // the jitter of fresh-random-every-loop noise.
+        unsigned long phaseMs = (searchElapsedMs + wigglePhaseOffsetMs) % WIGGLE_PERIOD_MS;
+        float phase = 2.0 * PI * (float)phaseMs / (float)WIGGLE_PERIOD_MS;
+        int sweep = (int)(amplitude * sin(phase));
+
+        if (sweep >= 0) {
+          m1 -= sweep; // yaw right
+        } else {
+          m4 -= (-sweep); // yaw left
+        }
+      }
+      */
   }
   }
 
