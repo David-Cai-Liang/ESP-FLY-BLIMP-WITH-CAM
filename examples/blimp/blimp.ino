@@ -5,7 +5,7 @@
 //                  no processFrame()/buildVisionData() calls); vData is left
 //                  zero-initialized, so telemetry reports [0,0,0,0] for
 //                  cx, cy, w, h every loop.
-#define use_camera 0
+#define use_camera 1
 
 #include <Vision.h>
 #define sensor_t adafruit_sensor_t
@@ -34,14 +34,9 @@ const int MOTOR_M4_FL = 1; // Front Left  (M4) -> Pin 1 (Orange Wire)
 #define MODE_PROPORTIONAL 1
 uint8_t currentMode = MODE_MANUAL;
 
-// Yaw controller tuning
-// Deadzone is a 40x40 px box centered on the frame; only the x-extent (+/-20px)
-// is used since this controller only corrects yaw (left/right).
-const int YAW_DEADZONE_HALF_PX = 40;     // half-width of the 40px-wide deadzone
-const float YAW_GAIN = 0.5;              // motor power added per degree of x error
 const int MOTOR_MAX = 255;               // analogWrite() PWM ceiling (8-bit default)
 const int DEFAULT_FORWARD_POWER = 20;
-const int DEFAULT_UPWARD_POWER = 20;
+const int DEFAULT_UPWARD_POWER = 50;
 
 // Camera geometry: degrees of yaw needed to center a target on the x-axis.
 // Simple flat model — every pixel subtends an equal slice of the horizontal
@@ -49,13 +44,9 @@ const int DEFAULT_UPWARD_POWER = 20;
 // this later without changing the telemetry layout.
 const float HORIZONTAL_FOV_DEG = 57.4;                    // camera's horizontal field of view
 const float DEG_PER_PIXEL = HORIZONTAL_FOV_DEG / MAX_W;   // MAX_W (320) comes from Vision.h
-
-// Degree-equivalents of the pixel-based yaw tuning above, so the P
-// controller now runs on yawError (degrees) instead of raw pixel error.
-// Values are derived from YAW_DEADZONE_HALF_PX / YAW_GAIN so existing
-// tuning carries over; adjust these directly in degrees going forward.
-const float YAW_DEADZONE_HALF_DEG = YAW_DEADZONE_HALF_PX * DEG_PER_PIXEL; // ~7.2 deg
-const float YAW_GAIN_PER_DEG = YAW_GAIN / DEG_PER_PIXEL;                  // motor power per degree of error
+const float YAW_DEADZONE_HALF_DEG = 5;
+const float YAW_GAIN_PER_DEG = 3;                  // motor power per degree of error
+const float KDYAW = 25; 
 
 // REPLACE WITH YOUR BASE STATION MAC ADDRESS
 // {0x30, 0x30, 0xF9, 0x17, 0xFB, 0x8C}
@@ -172,10 +163,10 @@ void loop() {
     // Drive motors directly from the base station's ControlPacket.
     // Watchdog: if no packet has arrived within CONTROL_TIMEOUT_MS, force zero.
     newControlAvailable = false;
-    m1 = stale ? 0 : incomingControl.motors[0] + Kyaw * iData.tz;
+    m1 = stale ? 0 : incomingControl.motors[0] - KDYAW * iData.tz;
     m2 = stale ? 0 : incomingControl.motors[1];
     m3 = stale ? 0 : incomingControl.motors[2];
-    m4 = stale ? 0 : incomingControl.motors[3] - Kyaw * iData.tz;
+    m4 = stale ? 0 : incomingControl.motors[3] + KDYAW * iData.tz;
 
   } else { // MODE_PROPORTIONAL
     // Manual stick input is ignored in this mode.
