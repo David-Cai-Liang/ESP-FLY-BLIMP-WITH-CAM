@@ -185,7 +185,7 @@ void loop() {
     // Manual stick input is ignored in this mode.
     newControlAvailable = false;
     
-    // waypoint[] waypoint_list = ...;
+    // float[] waypoint_list = ...; // the values are turning angles for each waypoint
     // int waypoint_index = ...;
 
     // Same watchdog as manual mode: if the base station link itself has gone
@@ -209,21 +209,24 @@ void loop() {
           if (yawError > 0) {
             m1 -= correction; // target right of center -> yaw right by cutting M1 (Front Right)
             m1 -= TURN_KD * iData.tz;
+            m1 = constrain(m1, 0, MOTOR_MAX);
           } else {
             m4 -= correction; // target left of center  -> yaw left  by cutting M4 (Front Left)
             m4 += TURN_KD * iData.tz;
+            m4 = constrain(m4, 0, MOTOR_MAX);
           }
         }
       }
-      /* Go into IMU-Based Waypoint Mode 
+      /*
       else if (closeEnough) {
+        // Go into IMU-Based Waypoint Mode 
         Turn using the rotation data for next waypoint: waypoint_list[next]
         next=(next+1)%waypoint_num
         float turnedSoFar = 0;
-        while (!stale && abs(turnedSoFar - waypoint_list[next].angle) > TURN_DEADBAND_DEG) {
+        while (!stale && abs(turnedSoFar - waypoint_list[next]) > TURN_DEADBAND_DEG) {
           stale = (millis() - lastRecvTime > CONTROL_TIMEOUT_MS);
           float rate = imu.readData().tz - gyroBiasDegPerSec;
-          float error = wrap180(waypoint_list[next].angle - turnedSoFar);
+          float error = wrap180(waypoint_list[next] - turnedSoFar);
 
             // Preliminary PID
             float turnPower = TURN_KP * error - TURN_KD * yawRate;
