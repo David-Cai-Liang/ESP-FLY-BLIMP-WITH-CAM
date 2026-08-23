@@ -207,10 +207,10 @@ void loop() {
         if (fabs(yawError) > YAW_DEADZONE_HALF_DEG) {
           int correction = (int)((fabs(yawError) - YAW_DEADZONE_HALF_DEG) * YAW_GAIN_PER_DEG);
           if (yawError > 0) {
-            m1 -= correction; // target right of center -> yaw right by cutting M1 (Rear Left)
+            m1 -= correction; // target right of center -> yaw right by cutting M1 (Front Right)
             m1 -= TURN_KD * iData.tz;
           } else {
-            m4 -= correction; // target left of center  -> yaw left  by cutting M4 (Rear Right)
+            m4 -= correction; // target left of center  -> yaw left  by cutting M4 (Front Left)
             m4 += TURN_KD * iData.tz;
           }
         }

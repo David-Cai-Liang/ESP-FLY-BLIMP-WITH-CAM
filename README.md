@@ -30,7 +30,9 @@ A vision-tracking, IMU-stabilized blimp controlled wirelessly from a keyboard, b
 | `IMU.h` / `IMU.cpp` | Blimp ESP32 | MPU6050 accelerometer/gyro readout |
 | `motor.h` / `motor.cpp` | Blimp ESP32 | Defines `MotorData` (the actual, post-constrain M1–M4 outputs) and a small constructor helper, shared by `TelemetryPacket` |
 | `base_station.ino` | Base station ESP32 | Serial ⇄ ESP-NOW protocol bridge (no processing) |
-| `base_station.py` | PC | Keyboard control, serial framing, live telemetry/latency dashboard |
+| `base_station.py` | PC | Keyboard/Xbox-controller control, serial framing, live telemetry/latency dashboard |
+| `calibrate.ino` | Blimp ESP32 (or standalone camera board) | Standalone camera streamer — grabs JPEG frames and writes them to serial with a `{FF AA 55 FF}` + length header, no ESP-NOW involved |
+| `calibrate.py` | PC | Live LAB color-mask tuner — decodes the JPEG stream from `calibrate.ino`, applies the current L/A/B thresholds, and displays the resulting mask so you can dial in `THRESHOLD_BLIMP` |
 
 ## Hardware
 
@@ -73,6 +75,7 @@ typedef struct __attribute__((packed)) {
   VisionData vision; // cx, cy, w, h (4x uint16_t) — blob centroid + ROI box size
   IMUData imu;       // ax, ay, az, tz (4x float)  — accel XYZ + gyro Z
   MotorData motors;  // m1, m2, m3, m4 (4x int16_t) — actual, post-constrain motor outputs
+  float yawError;    // degrees of yaw needed to center the target (computed on the blimp)
 } TelemetryPacket;
 
 // Base station -> Blimp
@@ -98,14 +101,14 @@ Both sketches now check `esp_now_send`'s return value (whether the packet was su
 The base station re-frames each `TelemetryPacket` for transport over serial, and unwraps `ControlPacket`s the same way:
 
 ```
-Telemetry (Base Station -> PC), 38 bytes total:
-  [ 4B header: 00 AA 55 FF ] [ 32B payload: 4x uint16 + 4x float + 4x int16 ] [ 2B footer: EE FF ]
+Telemetry (Base Station -> PC), 42 bytes total:
+  [ 4B header: 00 AA 55 FF ] [ 36B payload: 4x uint16 + 4x float + 4x int16 + 1x float ] [ 2B footer: EE FF ]
 
 Control (PC -> Base Station), 13 bytes total:
   [ 4B header: 00 BB 66 FF ] [ 9B payload: 4x int16 motor values + 1x uint8 mode ]
 ```
 
-The 32-byte telemetry payload is `cx, cy, w, h` (4x `uint16`), `ax, ay, az, tz` (4x `float`), then `m1, m2, m3, m4` — the blimp's actual motor outputs (4x `int16`).
+The 36-byte telemetry payload is `cx, cy, w, h` (4x `uint16`), `ax, ay, az, tz` (4x `float`), `m1, m2, m3, m4` — the blimp's actual motor outputs (4x `int16`) — then `yawError` (1x `float`), the degrees of yaw needed to center the target, computed on the blimp. `base_station.py` unpacks this with `struct.unpack("<4H4f4hf", raw_payload)` against a `PAYLOAD_SIZE` of 36 bytes.
 
 `base_station.py` re-syncs to the header on every parse pass, so it tolerates dropped/partial bytes on the serial line.
 
@@ -125,8 +128,9 @@ The 32-byte telemetry payload is `cx, cy, w, h` (4x `uint16`), `ax, ay, az, tz` 
    | `B_min` | `5` | `T` |
    | `B_max` | `6` | `Y` |
 5. Every adjustment prints the current mask values to the terminal.
-6. The default starting mask lives in `Calibrate/Calibrate..py` (lines 14–16) —
+6. The default starting mask lives in `calibrate.py` (lines 14–16, `l_min`/`l_max`, `a_min`/`a_max`, `b_min`/`b_max`) —
    edit it there if you want a different starting point for future calibration runs.
+7. `calibrate.py` requires `opencv-python`, `numpy`, and `pygame` in addition to `pyserial` (see [Setup](#1-flash-the-firmware-arduino-ide--arduino-cli) below) — install with `pip install opencv-python numpy pygame pyserial`.
 
 **Applying a calibrated mask to the detector**
 
@@ -156,9 +160,15 @@ pip install pyserial pygame
 python base_station.py
 ```
 
+(`calibrate.py` has its own, separate dependency list — see [Calibrating Vision Model](#calibrating-vision-model) above.)
+
 Edit `SERIAL_PORT` at the top of `base_station.py` first (e.g. `COM9` on Windows, `/dev/ttyUSB0` / `/dev/ttyACM0` on Linux/macOS) and confirm `BAUD_RATE` matches both `.ino` files (`115200`).
 
 ### Controls
+
+`base_station.py` supports two input methods, and will use whichever is available: an Xbox (or XInput-compatible) controller if `pygame` detects one at launch, otherwise the keyboard. Both drive the same `ControlPacket` at ~20 Hz.
+
+**Keyboard**
 
 | Key | Effect |
 |---|---|
@@ -170,7 +180,26 @@ Edit `SERIAL_PORT` at the top of `base_station.py` first (e.g. `COM9` on Windows
 | `M` | Toggle control mode: `MANUAL` ⇄ `AUTONOMOUS` (yaw-only, see below) |
 | `Ctrl+C` | Stop — sends an all-zero, forced-`MANUAL` motor command and exits |
 
-M2 carries a constant idle offset even with no keys held (see `compute_motors()`); every other motor idles at `0`. `M` toggles on the key-down edge only (holding it or OS key-repeat won't rapidly flip modes), and the script starts in `MANUAL` every time it launches, regardless of what mode the blimp was last left in.
+M2 carries a constant idle offset (`10`) even with no keys held (see `compute_motors()`); every other motor idles at `0`. `M` toggles on the key-down edge only (holding it or OS key-repeat won't rapidly flip modes), and the script starts in `MANUAL` every time it launches, regardless of what mode the blimp was last left in.
+
+You must click into the small "Base Station Controls" pygame window for keyboard input to register — it's what gives `pygame.key` focus, and it also mirrors the same status lines printed to the terminal.
+
+**Xbox controller** (if one is detected — see `init_controller()`)
+
+| Input | Effect |
+|---|---|
+| Left stick Y | Forward thrust on M1 + M4 (push up = forward) |
+| Left stick X | Steering — biases M1 vs M4, mirroring the keyboard's `D`/`A` |
+| Right stick Y | Lift — M2 above a `HOVER_BASELINE` of `20` when pushed up, M3 when pulled down |
+| `A` button | Toggle control mode (same edge-detected toggle as `M`) |
+
+All controller-derived motor values are capped at `CONTROLLER_MAX_POWER` (`80`) and pass through a `CONTROLLER_DEADZONE` (`0.15`) to ignore stick noise near center. Axis indices (`AXIS_LEFT_X`/`AXIS_LEFT_Y`/`AXIS_RIGHT_Y` = `0`/`1`/`4`) assume the common SDL2/XInput mapping; if your sticks move the wrong motors, run:
+
+```bash
+python base_station.py --calibrate
+```
+
+This prints live axis/button values to the terminal (no serial connection needed) so you can confirm or correct the indices at the top of `base_station.py`.
 
 The terminal shows live commanded motor state and control mode, the blimp's tracked vision blob (center/box), IMU readings, the blimp's actual motor outputs (unpacked from telemetry into `actual_motors`), and round-trip telemetry latency/FPS. On exit it prints a benchmark summary (frame count, average delta, jitter, throughput).
 
@@ -190,18 +219,20 @@ uint8_t currentMode = MODE_MANUAL;  // safe default until the first ControlPacke
 
 ### `MODE_MANUAL`
 
-Motors are driven directly from the base station's `ControlPacket` — i.e. whatever `base_station.py`'s keyboard input computed (see [Controls](#controls) below).
+Motors are driven from the base station's `ControlPacket` — i.e. whatever `base_station.py`'s keyboard or controller input computed (see [Controls](#controls) below) — with one addition: M1 and M4 each get a small yaw-rate correction from the IMU's gyro-Z reading (`TURN_KD * iData.tz`, `TURN_KD = 25`), subtracted from M1 and added to M4. This damps unwanted yaw rotation while flying manually; it isn't purely open-loop stick input passed straight to the motors.
 
 ### `MODE_PROPORTIONAL`
 
-Incoming manual stick input is ignored. Instead, a proportional (P) controller steers **yaw only** (left/right turning) off the vision blob's centroid:
+Incoming manual stick input is ignored. The blimp flies forward by default and a proportional (P) controller nudges **yaw only** (left/right turning) to keep the vision blob centered:
 
-- **Deadzone:** a 40×40 px box centered on the 320×240 frame (only the x-extent, ±20 px around `cx = 160`, is used since this controller only corrects yaw).
-- **Gain:** for every pixel the centroid's x-coordinate sits outside the deadzone, the corresponding motor's power increases by `YAW_GAIN` (1).
-- **Direction:** target right of center → boost `M2` (Rear Right, mirrors the `D` key); target left of center → boost `M3` (Rear Left, mirrors the `A` key). This mirrors the manual key bindings but hasn't been flight-verified — if the blimp turns away from the target instead of toward it, swap the `m2`/`m3` assignment in `blimp.ino`.
+- **Default flight:** `M1 = M4 = DEFAULT_FORWARD_POWER` (`20`), `M2 = DEFAULT_UPWARD_POWER` (`50`), `M3 = 0`, before any yaw correction is applied.
+- **Yaw error** is computed in *degrees*, not pixels: `yawError = (vData.cx - MAX_W/2) * DEG_PER_PIXEL`, where `DEG_PER_PIXEL = HORIZONTAL_FOV_DEG / MAX_W` and `HORIZONTAL_FOV_DEG = 57.4`. This is calculated every loop (in both modes) so it's always available in telemetry, not just when `MODE_PROPORTIONAL` is active.
+- **Deadzone:** `YAW_DEADZONE_HALF_DEG` = `5°`. No correction is applied inside this window.
+- **Gain:** `YAW_GAIN_PER_DEG` = `3` — for every degree of yaw error beyond the deadzone, the correction grows by 3 (PWM units).
+- **Direction:** turning is done by *cutting* power to one motor rather than boosting the other. If `yawError > 0` (target right of center), `M1 -= correction`; if `yawError < 0` (target left of center), `M4 -= correction`. Each of these also gets the same gyro yaw-rate term used in `MODE_MANUAL` (`± TURN_KD * iData.tz`, `TURN_KD = 25`).
+- **"Close enough":** once the tracked blob's box is at least `180×180` px (`vData.w > 180 && vData.h > 180`), the controller stops correcting yaw and just holds forward flight. (The commented-out code in `blimp.ino` sketches out a follow-on IMU waypoint-turn behavior once "close enough" is reached, but it isn't implemented yet.)
+- If no target is visible (`vData.w == 0 || vData.h == 0`), no correction is applied and the blimp continues flying straight forward at the default power levels above — it does **not** sit at zero thrust, and it does **not** currently search for a lost target (a "wiggle search" sweep exists in `blimp.ino` as commented-out, unimplemented scaffolding).
 - All motor outputs are clamped to `[0, 255]` (`MOTOR_MAX`) before `analogWrite`.
-
-If no target is currently locked (`vData.w == 0 && vData.h == 0`), the controller applies no correction and the blimp sits at zero thrust rather than steering blind.
 
 **This mode still respects the control-link watchdog** (see below) — losing contact with the base station zeroes the motors regardless of what the camera sees, so there's always a way to kill the blimp by cutting the base station's link, even in autonomous mode. This does mean `base_station.py` (or something) must still be actively sending `ControlPacket`s at ~20 Hz for the blimp to leave the "stale" state, even though those packets' motor values are discarded in this mode — if nothing is sending, the blimp stays at zero thrust indefinitely.
 
@@ -233,6 +264,8 @@ Note the 1000 ms timeout is fairly loose relative to the ~20 Hz (50 ms) control 
 ## Known limitations / suggested hardening
 
 - `CONTROL_TIMEOUT_MS` (1000 ms) is generous compared to the control loop's ~50 ms cadence; a tighter timeout would reduce how long the blimp can drift on a stale command before self-stopping.
-- The proportional yaw controller's turn direction (`M2` vs `M3` for a given error sign) is inferred from the manual key bindings, not confirmed in flight — verify and flip if needed.
-- The 40×40 px deadzone and `YAW_GAIN` of 1 are untuned starting values; expect to adjust both once you see how the blimp actually responds.
+- The proportional yaw controller's turn direction (which of `M1`/`M4` gets cut for a given error sign) hasn't been confirmed in flight.
+- The `5°` yaw deadzone (`YAW_DEADZONE_HALF_DEG`) and gain of `3`/degree (`YAW_GAIN_PER_DEG`) are untuned starting values; expect to adjust both once you see how the blimp actually responds.
+- `MODE_PROPORTIONAL` has no target-reacquisition behavior yet: if the tracked blob is lost, the blimp just keeps flying straight forward rather than searching. A "wiggle search" sweep and an IMU-based waypoint turn (for once the target is "close enough") both exist as commented-out scaffolding in `blimp.ino` but aren't wired up.
+- `blimp.ino`'s `use_camera` compile-time flag (currently `1`) can bypass all camera code — `Vision` object, `setup()`, `processFrame()`/`buildVisionData()` — for bring-up/testing without a camera attached. With it set to `0`, telemetry always reports `[0,0,0,0]` for `cx, cy, w, h`, which will also disable yaw error and hold `MODE_PROPORTIONAL` at "no target visible" behavior. Worth checking this is `1` before expecting vision tracking to work.
 - On `base_station.ino`, `esp_now_send`'s return value and the `OnDataSent` delivery-status callback are both now logged over the same `Serial` connection used for the framed telemetry/control protocol to `base_station.py`. `base_station.py` re-syncs on the next telemetry header, so a stray debug line is tolerated (a few bytes are dropped, not a crash), but it does briefly interrupt the binary stream — worth moving to a second UART or removing the prints if you see it cause noticeable frame loss.
