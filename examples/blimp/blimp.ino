@@ -165,7 +165,6 @@ void loop() {
   // Degrees of yaw needed to bring the target's blob center to the middle
   // of the frame. Computed every loop (not just in PROPORTIONAL mode) so
   // it's always available in telemetry for monitoring/tuning.
-  // The camera is upside down so we need -1.
   float yawError = ((float)vData.cx - (MAX_W / 2.0f)) * DEG_PER_PIXEL;
 
   bool stale = (millis() - lastRecvTime > CONTROL_TIMEOUT_MS);
