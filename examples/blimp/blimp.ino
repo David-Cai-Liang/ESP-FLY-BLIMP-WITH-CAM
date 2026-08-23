@@ -35,8 +35,8 @@ const int MOTOR_M4_FL = 1; // Front Left  (M4) -> Pin 1 (Orange Wire)
 uint8_t currentMode = MODE_MANUAL;
 
 const int MOTOR_MAX = 255;               // analogWrite() PWM ceiling (8-bit default)
-const int DEFAULT_FORWARD_POWER = 20;
-const int DEFAULT_UPWARD_POWER = 50;
+const int DEFAULT_FORWARD_POWER = 10;
+const int DEFAULT_UPWARD_POWER = 20;
 
 // Camera geometry: degrees of yaw needed to center a target on the x-axis.
 // Simple flat model — every pixel subtends an equal slice of the horizontal
@@ -44,8 +44,8 @@ const int DEFAULT_UPWARD_POWER = 50;
 // this later without changing the telemetry layout.
 const float HORIZONTAL_FOV_DEG = 57.4;                    // camera's horizontal field of view
 const float DEG_PER_PIXEL = HORIZONTAL_FOV_DEG / MAX_W;   // MAX_W (320) comes from Vision.h
-const float YAW_DEADZONE_HALF_DEG = 5;
-const float YAW_GAIN_PER_DEG = 3;                  // motor power per degree of error
+const float YAW_DEADZONE_HALF_DEG = 2;
+const float YAW_GAIN_PER_DEG = 20;                  // motor power per degree of error
 const float TURN_KD = 25;
 // const float TURN_RATE_SETTLE
 // const float TURN_DEADBAND_DEG
@@ -165,6 +165,7 @@ void loop() {
   // Degrees of yaw needed to bring the target's blob center to the middle
   // of the frame. Computed every loop (not just in PROPORTIONAL mode) so
   // it's always available in telemetry for monitoring/tuning.
+  // The camera is upside down so we need -1.
   float yawError = ((float)vData.cx - (MAX_W / 2.0f)) * DEG_PER_PIXEL;
 
   bool stale = (millis() - lastRecvTime > CONTROL_TIMEOUT_MS);
@@ -207,14 +208,14 @@ void loop() {
         if (fabs(yawError) > YAW_DEADZONE_HALF_DEG) {
           int correction = (int)((fabs(yawError) - YAW_DEADZONE_HALF_DEG) * YAW_GAIN_PER_DEG);
           if (yawError > 0) {
-            m1 -= correction; // target right of center -> yaw right by cutting M1 (Front Right)
+            m4 += correction;    // target right of center -> yaw right by increasing M4 (Front Left)
+          } else {
+            m1 += correction;    // target right of center -> yaw right by increasing M1 (Front Right)
+          }
             m1 -= TURN_KD * iData.tz;
             m1 = constrain(m1, 0, MOTOR_MAX);
-          } else {
-            m4 -= correction; // target left of center  -> yaw left  by cutting M4 (Front Left)
             m4 += TURN_KD * iData.tz;
             m4 = constrain(m4, 0, MOTOR_MAX);
-          }
         }
       }
       /*
