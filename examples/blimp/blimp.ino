@@ -11,7 +11,7 @@
 #define sensor_t adafruit_sensor_t
 #include <IMU.h>
 #undef sensor_t
-#include "motor.h"
+#include <Motor.h> 
 #include <esp_now.h>
 #include <WiFi.h>
 #include <esp_wifi.h>
