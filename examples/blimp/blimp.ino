@@ -15,6 +15,7 @@
 #include <esp_now.h>
 #include <WiFi.h>
 #include <esp_wifi.h>
+#include "BatteryMonitor.h"
 
 // Corrected Motor GPIO Pin Mapping from ESP-FLY Wiring Diagram
 const int MOTOR_M1_FR = 7; // Front Right (M1) -> Pin 7 (Purple Wire)
@@ -62,6 +63,17 @@ const float TURN_KD = 25;
 // const int WIGGLE_MIN_AMPLITUDE     = 10;        // starting sweep amplitude (PWM units)
 // const int WIGGLE_MAX_AMPLITUDE     = MOTOR_MAX; // amplitude stops growing past this
 
+// === Battery Monitor =========================================================
+// ADC pin tied to the Vbat divider midpoint (see BatteryMonitor.h for the
+// R_TOP/R_BOTTOM divider math). REPLACE WITH YOUR ACTUAL ADC-CAPABLE GPIO
+// per the ESP-FLY schematic if this doesn't match your board.
+const uint8_t BATTERY_ADC_PIN = 9;
+const int8_t  BATTERY_LED_PIN = -1;  // set to a GPIO if you wire a low-batt LED
+const unsigned long BATTERY_READ_INTERVAL_MS = 500; // per BatteryMonitor.h guidance (500ms-1s)
+
+BatteryMonitor battMonitor(BATTERY_ADC_PIN, BATTERY_LED_PIN);
+unsigned long lastBattReadMs = 0;
+
 // REPLACE WITH YOUR BASE STATION MAC ADDRESS
 // {0x30, 0x30, 0xF9, 0x17, 0xFB, 0x8C}
 // {0x30, 0x30, 0xf9, 0x16, 0xa1, 0x0c}
@@ -74,6 +86,7 @@ typedef struct __attribute__((packed)) {
   IMUData imu;       // ax, ay, az, tz (4 x float)
   MotorData motors;  // actual, post-constrain M1-M4 outputs (4 x int16_t)
   float yawError;    // degrees of yaw needed to center the target (+ => target is right of center)
+  float battVoltage; // battery voltage in volts, from BatteryMonitor
 } TelemetryPacket;
 
 // Motor control commands received from Base Station
@@ -146,6 +159,7 @@ void setup() {
 #if use_camera
   vision.setup();
 #endif
+  battMonitor.begin();
 }
 
 void loop() {
@@ -161,6 +175,18 @@ void loop() {
   // use_camera == 0: camera is bypassed entirely; vData stays [0,0,0,0].
 
   IMUData iData = imu.readData();
+
+  // Battery voltage: throttled to BATTERY_READ_INTERVAL_MS since ADC
+  // averaging (8 samples) isn't needed every loop iteration; the cached
+  // value from the last read is reused for every telemetry packet in
+  // between reads via battMonitor.getVoltage().
+  if (millis() - lastBattReadMs >= BATTERY_READ_INTERVAL_MS) {
+    lastBattReadMs = millis();
+    battMonitor.update();
+    // if (battMonitor.isLowBattery()) {
+    //   Serial.printf("[BATTERY] LOW BATTERY WARNING: %.2fV\n", battMonitor.getVoltage());
+    // }
+  }
 
   // Degrees of yaw needed to bring the target's blob center to the middle
   // of the frame. Computed every loop (not just in PROPORTIONAL mode) so
@@ -297,6 +323,7 @@ void loop() {
   telemetry.imu = iData;
   telemetry.motors = buildMotorData(m1, m2, m3, m4);
   telemetry.yawError = yawError;
+  telemetry.battVoltage = battMonitor.getVoltage();
 
   esp_err_t sendResult = esp_now_send(baseStationAddress, (uint8_t *)&telemetry, sizeof(telemetry));
   if (sendResult != ESP_OK) {

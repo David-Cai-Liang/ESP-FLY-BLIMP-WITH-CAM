@@ -23,6 +23,7 @@ typedef struct __attribute__((packed)) {
   float ax, ay, az, tz;
   int16_t m1, m2, m3, m4; // actual, post-constrain motor outputs from the blimp
   float yawError;         // degrees of yaw needed to center the target, computed on the blimp
+  float battVoltage;      // battery voltage in volts, from the blimp's BatteryMonitor
 } TelemetryPacket;
 
 // Framed Protocol Markers

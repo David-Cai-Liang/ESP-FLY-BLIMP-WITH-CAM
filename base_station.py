@@ -18,11 +18,16 @@ TELEMETRY_HEADER = b"\x00\xAA\x55\xFF"
 TELEMETRY_FOOTER = b"\xEE\xFF"
 CONTROL_HEADER = b"\x00\xBB\x66\xFF"
 
-PAYLOAD_SIZE = 36  # 4x uint16 (8B) + 4x float (16B) + 4x int16 actual motors (8B) + 1x float yaw error (4B)
-TOTAL_FRAME_SIZE = 4 + PAYLOAD_SIZE + 2  # 34 Bytes Total Frame
+PAYLOAD_SIZE = 40  # 4x uint16 (8B) + 4x float (16B) + 4x int16 actual motors (8B) + 1x float yaw error (4B) + 1x float batt voltage (4B)
+TOTAL_FRAME_SIZE = 4 + PAYLOAD_SIZE + 2  # 46 Bytes Total Frame
 
 # Yaw-to-target is now computed on the blimp (see blimp.ino: HORIZONTAL_FOV_DEG /
 # DEG_PER_PIXEL / yawError) and arrives as part of the telemetry payload below.
+
+# Must match BatteryMonitor.h's default low-battery threshold on the blimp,
+# used here only to color/flag the status display -- the blimp itself is the
+# authority on when the battery is actually low (its LED, if wired, reflects that).
+LOW_BATTERY_THRESHOLD_V = 3.3
 
 # Control modes (must match blimp.ino's MODE_MANUAL / MODE_PROPORTIONAL)
 MODE_MANUAL = 0
@@ -80,6 +85,7 @@ latest_telemetry = {
     "cx": 0, "cy": 0, "w": 0, "h": 0,
     "ax": 0.0, "ay": 0.0, "az": 0.0, "tz": 0.0,
     "yaw_err": 0.0,
+    "batt_voltage": 0.0,
     "delta_ms": 0.0,
     "avg_dt": 0.0,
     "fps": 0.0,
@@ -324,8 +330,8 @@ def telemetry_reader_loop(ser):
                 avg_dt = sum(frame_deltas) / len(frame_deltas) if frame_deltas else 0.0
                 fps = 1000.0 / avg_dt if avg_dt > 0 else 0.0
 
-                cx, cy, w, h, ax, ay, az, tz, m1, m2, m3, m4, yaw_err = struct.unpack(
-                    "<4H4f4hf", raw_payload
+                cx, cy, w, h, ax, ay, az, tz, m1, m2, m3, m4, yaw_err, batt_voltage = struct.unpack(
+                    "<4H4f4hff", raw_payload
                 )
 
                 with telemetry_lock:
@@ -335,6 +341,7 @@ def telemetry_reader_loop(ser):
                             "cx": cx, "cy": cy, "w": w, "h": h,
                             "ax": ax, "ay": ay, "az": az, "tz": tz,
                             "yaw_err": yaw_err,
+                            "batt_voltage": batt_voltage,
                             "delta_ms": delta_ms,
                             "avg_dt": avg_dt,
                             "fps": fps,
@@ -428,16 +435,19 @@ def main():
                 cx, cy, w, h = (telemetry_snapshot[k] for k in ("cx", "cy", "w", "h"))
                 ax, ay, az, tz = (telemetry_snapshot[k] for k in ("ax", "ay", "az", "tz"))
                 yaw_err = telemetry_snapshot["yaw_err"]
+                batt_voltage = telemetry_snapshot["batt_voltage"]
                 delta_ms = telemetry_snapshot["delta_ms"]
                 avg_dt = telemetry_snapshot["avg_dt"]
                 fps = telemetry_snapshot["fps"]
 
                 # Build the status text once, then mirror it to both
                 # the terminal and the pygame window.
+                batt_flag = " LOW!" if batt_voltage <= LOW_BATTERY_THRESHOLD_V else ""
                 telemetry_line = (
                     f"[TELEMETRY] Motors: {actual_motors} || "
                     f"Vision: CX:{cx:3d} CY:{cy:3d} W:{w:3d} H:{h:3d} Yaw:{yaw_err:+5.1f}deg || "
-                    f"IMU: AX:{ax:5.1f} AY:{ay:5.1f} AZ:{az:5.1f} TZ:{tz:5.1f}"
+                    f"IMU: AX:{ax:5.1f} AY:{ay:5.1f} AZ:{az:5.1f} TZ:{tz:5.1f} || "
+                    f"Batt: {batt_voltage:4.2f}V{batt_flag}"
                 )
                 command_line = (
                     f"[COMMAND] Mode: {MODE_NAMES[current_mode]:<21} || Motors: {command_motors}"
