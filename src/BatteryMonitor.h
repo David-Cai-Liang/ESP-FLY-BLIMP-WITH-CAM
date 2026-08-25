@@ -32,7 +32,7 @@ public:
     // rBottomOhms  : Resistor from ADC node to GND    (default 10,000Ω)
     // adcMaxCounts : ADC resolution counts (ESP32-S3 default is 12-bit = 4095)
     // adcRefVolts  : ADC reference voltage in volts (ESP32-S3 = 3.3V)
-    BatteryMonitor(uint8_t adcPin,
+    BatteryMonitor(uint8_t adcPin = 2,
                    int8_t ledPin = -1,
                    float rTopOhms = 10000.0f,
                    float rBottomOhms = 10000.0f,

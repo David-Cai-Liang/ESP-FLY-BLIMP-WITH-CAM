@@ -64,14 +64,8 @@ const float TURN_KD = 25;
 // const int WIGGLE_MAX_AMPLITUDE     = MOTOR_MAX; // amplitude stops growing past this
 
 // === Battery Monitor =========================================================
-// ADC pin tied to the Vbat divider midpoint (see BatteryMonitor.h for the
-// R_TOP/R_BOTTOM divider math). REPLACE WITH YOUR ACTUAL ADC-CAPABLE GPIO
-// per the ESP-FLY schematic if this doesn't match your board.
-const uint8_t BATTERY_ADC_PIN = 9;
-const int8_t  BATTERY_LED_PIN = -1;  // set to a GPIO if you wire a low-batt LED
 const unsigned long BATTERY_READ_INTERVAL_MS = 500; // per BatteryMonitor.h guidance (500ms-1s)
-
-BatteryMonitor battMonitor(BATTERY_ADC_PIN, BATTERY_LED_PIN);
+BatteryMonitor battMonitor;
 unsigned long lastBattReadMs = 0;
 
 // REPLACE WITH YOUR BASE STATION MAC ADDRESS
