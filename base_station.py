@@ -447,7 +447,7 @@ def main():
                     f"[TELEMETRY] Motors: {actual_motors} || "
                     f"Vision: CX:{cx:3d} CY:{cy:3d} W:{w:3d} H:{h:3d} Yaw:{yaw_err:+5.1f}deg || "
                     f"IMU: AX:{ax:5.1f} AY:{ay:5.1f} AZ:{az:5.1f} TZ:{tz:5.1f} || "
-                    f"Batt: {batt_voltage:4.2f}V{batt_flag}"
+                    f"Batt: {batt_voltage:4.2f}V {batt_flag}"
                 )
                 command_line = (
                     f"[COMMAND] Mode: {MODE_NAMES[current_mode]:<21} || Motors: {command_motors}"

@@ -17,7 +17,7 @@ A vision-tracking, IMU-stabilized blimp controlled wirelessly from a keyboard, b
 
 ## How it works
 
-1. **Blimp** runs an onboard camera + IMU loop, packages the readings into a `TelemetryPacket`, and blasts it to the base station over ESP-NOW every loop iteration. It also listens for `ControlPacket`s from the base station, which carry both motor commands and the active control mode, and drives the 4 motors via `analogWrite`.
+1. **Blimp** runs an onboard camera + IMU + battery-voltage loop, packages the readings into a `TelemetryPacket`, and blasts it to the base station over ESP-NOW every loop iteration. It also listens for `ControlPacket`s from the base station, which carry both motor commands and the active control mode, and drives the 4 motors via `analogWrite`.
 2. **Base station (ESP32)** is a dumb relay: it forwards every `TelemetryPacket` it receives from the blimp out over USB serial (framed with a header/footer), and forwards any `ControlPacket` it reads from serial out to the blimp over ESP-NOW. It doesn't interpret the mode byte at all — that's the blimp's job.
 3. **base_station.py** runs on your PC, reads WASD-style key state, computes motor values at ~20 Hz, and writes them (plus the currently selected control mode) to the base station over serial. Pressing `M` toggles the mode live. The script also parses incoming telemetry frames, tracks round-trip frame timing, and prints a live status/latency readout to the terminal.
 
@@ -29,6 +29,7 @@ A vision-tracking, IMU-stabilized blimp controlled wirelessly from a keyboard, b
 | `Vision.h` / `Vision.cpp` | Blimp ESP32 | OV-series camera capture, Lab-color threshold blob tracking, ROI locking |
 | `IMU.h` / `IMU.cpp` | Blimp ESP32 | MPU6050 accelerometer/gyro readout |
 | `motor.h` / `motor.cpp` | Blimp ESP32 | Defines `MotorData` (the actual, post-constrain M1–M4 outputs) and a small constructor helper, shared by `TelemetryPacket` |
+| `BatteryMonitor.h` / `BatteryMonitor.cpp` | Blimp ESP32 | Reads battery voltage through a resistive divider, averages/samples the ADC, and reports the reconstructed pack voltage + a low-battery flag |
 | `base_station.ino` | Base station ESP32 | Serial ⇄ ESP-NOW protocol bridge (no processing) |
 | `base_station.py` | PC | Keyboard/Xbox-controller control, serial framing, live telemetry/latency dashboard |
 | `calibrate.ino` | Blimp ESP32 (or standalone camera board) | Standalone camera streamer — grabs JPEG frames and writes them to serial with a `{FF AA 55 FF}` + length header, no ESP-NOW involved |
@@ -47,6 +48,7 @@ A vision-tracking, IMU-stabilized blimp controlled wirelessly from a keyboard, b
 
 - Camera: OV-series module wired per `Vision.h` pin map (XCLK=10, PCLK=13, VSYNC=38, HREF=47, SIOD=40, SIOC=39, D0–D7 as defined), status LED on GPIO 21.
 - IMU: MPU6050 on I²C, SDA=5, SCL=6, address `0x68`.
+- Battery voltage sensing: resistive divider (two 10KΩ resistors, `R_TOP`/`R_BOTTOM`) from `Vbat` down to GPIO 2 (ADC-capable, `BatteryMonitor`'s default `adcPin`), then to GND. With a 1:1 ratio this halves a up-to-~5V `Vbat` rail to a max ~2.5V at the ADC pin, safely under the ESP32-S3's 3.3V ADC limit. `blimp.ino` instantiates `BatteryMonitor` with all defaults (no LED pin, 12-bit/3.3V ADC, 3.3V low-battery threshold) and polls it every `BATTERY_READ_INTERVAL_MS` (500 ms), averaging 8 samples per read. The reconstructed pack voltage is attached to every `TelemetryPacket` as `battVoltage`.
 - Balloon: 30/36 inch 2-sheet Foil Balloon
   - Potential Sources:
     - https://www.balloonsdirect.com/36-inch-round-foil-balloons-gold
@@ -72,10 +74,11 @@ Two fixed-size, `packed` structs are exchanged directly as ESP-NOW payloads:
 ```cpp
 // Blimp -> Base station
 typedef struct __attribute__((packed)) {
-  VisionData vision; // cx, cy, w, h (4x uint16_t) — blob centroid + ROI box size
-  IMUData imu;       // ax, ay, az, tz (4x float)  — accel XYZ + gyro Z
-  MotorData motors;  // m1, m2, m3, m4 (4x int16_t) — actual, post-constrain motor outputs
-  float yawError;    // degrees of yaw needed to center the target (computed on the blimp)
+  VisionData vision;  // cx, cy, w, h (4x uint16_t) — blob centroid + ROI box size
+  IMUData imu;        // ax, ay, az, tz (4x float)  — accel XYZ + gyro Z
+  MotorData motors;   // m1, m2, m3, m4 (4x int16_t) — actual, post-constrain motor outputs
+  float yawError;     // degrees of yaw needed to center the target (computed on the blimp)
+  float battVoltage;  // battery pack voltage in volts, from BatteryMonitor (updated every 500ms)
 } TelemetryPacket;
 
 // Base station -> Blimp
@@ -101,14 +104,14 @@ Both sketches now check `esp_now_send`'s return value (whether the packet was su
 The base station re-frames each `TelemetryPacket` for transport over serial, and unwraps `ControlPacket`s the same way:
 
 ```
-Telemetry (Base Station -> PC), 42 bytes total:
-  [ 4B header: 00 AA 55 FF ] [ 36B payload: 4x uint16 + 4x float + 4x int16 + 1x float ] [ 2B footer: EE FF ]
+Telemetry (Base Station -> PC), 46 bytes total:
+  [ 4B header: 00 AA 55 FF ] [ 40B payload: 4x uint16 + 4x float + 4x int16 + 1x float + 1x float ] [ 2B footer: EE FF ]
 
 Control (PC -> Base Station), 13 bytes total:
   [ 4B header: 00 BB 66 FF ] [ 9B payload: 4x int16 motor values + 1x uint8 mode ]
 ```
 
-The 36-byte telemetry payload is `cx, cy, w, h` (4x `uint16`), `ax, ay, az, tz` (4x `float`), `m1, m2, m3, m4` — the blimp's actual motor outputs (4x `int16`) — then `yawError` (1x `float`), the degrees of yaw needed to center the target, computed on the blimp. `base_station.py` unpacks this with `struct.unpack("<4H4f4hf", raw_payload)` against a `PAYLOAD_SIZE` of 36 bytes.
+The 40-byte telemetry payload is `cx, cy, w, h` (4x `uint16`), `ax, ay, az, tz` (4x `float`), `m1, m2, m3, m4` — the blimp's actual motor outputs (4x `int16`) — `yawError` (1x `float`), the degrees of yaw needed to center the target, computed on the blimp — and `battVoltage` (1x `float`), the blimp's reconstructed battery pack voltage from `BatteryMonitor`. This grew from 36 bytes when `battVoltage` was added to `TelemetryPacket`. `base_station.py` unpacks it with `struct.unpack("<4H4f4hff", raw_payload)` against a `PAYLOAD_SIZE` of 40 bytes, both updated to match.
 
 `base_station.py` re-syncs to the header on every parse pass, so it tolerates dropped/partial bytes on the serial line.
 
@@ -201,7 +204,7 @@ python base_station.py --calibrate
 
 This prints live axis/button values to the terminal (no serial connection needed) so you can confirm or correct the indices at the top of `base_station.py`.
 
-The terminal shows live commanded motor state and control mode, the blimp's tracked vision blob (center/box), IMU readings, the blimp's actual motor outputs (unpacked from telemetry into `actual_motors`), and round-trip telemetry latency/FPS. On exit it prints a benchmark summary (frame count, average delta, jitter, throughput).
+The terminal shows live commanded motor state and control mode, the blimp's tracked vision blob (center/box), IMU readings, the blimp's actual motor outputs (unpacked from telemetry into `actual_motors`), battery voltage (flagged `LOW!` at/below `LOW_BATTERY_THRESHOLD_V`), and round-trip telemetry latency/FPS. On exit it prints a benchmark summary (frame count, average delta, jitter, throughput).
 
 `actual_motors` (a `[m1, m2, m3, m4]` list, parsed each frame from the new `TelemetryPacket` fields) reflects what the blimp is really doing, as opposed to `curr_motors`/`compute_motors()`, which is only what the PC last *commanded*. The two will diverge whenever `MODE_PROPORTIONAL` is active (manual input is ignored on the blimp side) or the blimp's own watchdog has zeroed the motors — exactly the cases where an autonomous or logging consumer of this script would want the real value.
 
@@ -244,6 +247,20 @@ Incoming manual stick input is ignored. The blimp flies forward by default and a
 
 The blob's true centroid (`largest.cx`/`largest.cy` from `findLargestBlob`) is what gets transmitted as `VisionData.cx`/`cy` and is what the proportional yaw controller reacts to — it is not the same as the padded tracking ROI's corner or size (`w`/`h`), which exist for telemetry/display only.
 
+## Battery monitoring
+
+`BatteryMonitor` (`BatteryMonitor.h`/`.cpp`) reads the blimp's pack voltage through the resistive divider described in [Hardware](#hardware) above and reconstructs the true `Vbat` from the divider math:
+
+```cpp
+Vbat = Vadc * (R_TOP + R_BOTTOM) / R_BOTTOM
+```
+
+- **Sampling:** each `update()` call averages `NUM_SAMPLES` (8) back-to-back `analogRead()`s, 200µs apart, to reduce ADC noise. `blimp.ino` calls `update()` at most once per `BATTERY_READ_INTERVAL_MS` (500 ms, per the class's own 500ms–1s guidance) rather than every loop iteration, and reuses the cached value (`getVoltage()`) for every `TelemetryPacket` in between reads.
+- **Calibration:** `setCalibrationFactor()` applies a manual multiplier on top of the divider math, for correcting resistor-tolerance drift against a measured real-world reading. Not currently set anywhere in `blimp.ino` (defaults to `1.0`).
+- **Low-battery flag:** `isLowBattery()` compares the last reading against `_lowBattThreshold`, which defaults to 3.3V (a 1S LiPo storage-safe level) and can be changed with `setLowBatteryThreshold()`. `update()` also drives an optional indicator LED (`ledPin`, disabled by default via `-1`) high whenever this flag is true.
+- **Not yet wired up on the blimp:** `blimp.ino` doesn't currently call `setLowBatteryThreshold()`, `setCalibrationFactor()`, or enable the LED pin, and the in-loop low-battery warning print (`isLowBattery()` check + `Serial.printf(...)`) is present but commented out. The voltage is still transmitted in every `TelemetryPacket` regardless.
+- **PC-side display:** `base_station.py` reads `battVoltage` out of each telemetry frame and shows it in its live status line (`Batt: X.XXV`), flagging it `LOW!` once it drops to/below `LOW_BATTERY_THRESHOLD_V` (3.3V, kept in sync by hand with `BatteryMonitor.h`'s default threshold). This is purely a PC-side display/flag — the blimp itself is still the authority on when the battery is actually low, since that's where the LED (if wired) and any future cutoff behavior would live.
+
 ## Safety: control-link failsafe
 
 `blimp.ino` tracks `lastRecvTime` (updated in `OnDataRecv`, which fires on any received `ControlPacket`) and treats the link as **stale** if more than `CONTROL_TIMEOUT_MS` (currently 1000 ms) has passed since the last packet arrived:
@@ -269,3 +286,4 @@ Note the 1000 ms timeout is fairly loose relative to the ~20 Hz (50 ms) control 
 - `MODE_PROPORTIONAL` has no target-reacquisition behavior yet: if the tracked blob is lost, the blimp just keeps flying straight forward rather than searching. A "wiggle search" sweep and an IMU-based waypoint turn (for once the target is "close enough") both exist as commented-out scaffolding in `blimp.ino` but aren't wired up.
 - `blimp.ino`'s `use_camera` compile-time flag (currently `1`) can bypass all camera code — `Vision` object, `setup()`, `processFrame()`/`buildVisionData()` — for bring-up/testing without a camera attached. With it set to `0`, telemetry always reports `[0,0,0,0]` for `cx, cy, w, h`, which will also disable yaw error and hold `MODE_PROPORTIONAL` at "no target visible" behavior. Worth checking this is `1` before expecting vision tracking to work.
 - On `base_station.ino`, `esp_now_send`'s return value and the `OnDataSent` delivery-status callback are both now logged over the same `Serial` connection used for the framed telemetry/control protocol to `base_station.py`. `base_station.py` re-syncs on the next telemetry header, so a stray debug line is tolerated (a few bytes are dropped, not a crash), but it does briefly interrupt the binary stream — worth moving to a second UART or removing the prints if you see it cause noticeable frame loss.
+- `BatteryMonitor`'s low-battery warning (`isLowBattery()` + a `Serial.printf`) is present in `blimp.ino` but commented out, and no calibration factor or custom low-battery threshold is set on the blimp side — the only place `battVoltage` currently drives a "low" indication is `base_station.py`'s status line.
