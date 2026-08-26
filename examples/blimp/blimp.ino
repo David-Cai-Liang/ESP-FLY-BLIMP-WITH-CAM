@@ -205,8 +205,10 @@ void loop() {
     // Manual stick input is ignored in this mode.
     newControlAvailable = false;
     
-    // float[] waypoint_list = ...; // the values are turning angles for each waypoint
-    // int waypoint_index = ...;
+    // {135.0, 45.0, 135.0, 45.0}
+    // {90.0, 90.0, 90.0, 90.0}
+    float waypoint_list[] = {90.0, 90.0, 90.0, 90.0}; // the values are turning angles for each waypoint
+    int waypoint_index = 0;
 
     // Same watchdog as manual mode: if the base station link itself has gone
     // stale, stay at zero rather than continuing to fly blind.
