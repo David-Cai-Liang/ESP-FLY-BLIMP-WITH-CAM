@@ -46,7 +46,7 @@ const int DEFAULT_UPWARD_POWER = 20;
 const float HORIZONTAL_FOV_DEG = 57.4;                    // camera's horizontal field of view
 const float DEG_PER_PIXEL = HORIZONTAL_FOV_DEG / MAX_W;   // MAX_W (320) comes from Vision.h
 const float YAW_DEADZONE_HALF_DEG = 2;
-const float YAW_GAIN_PER_DEG = 20;                  // motor power per degree of error
+const float YAW_GAIN_PER_DEG = 10;                  // motor power per degree of error
 const float TURN_KD = 25;
 // const float TURN_RATE_SETTLE
 // const float TURN_DEADBAND_DEG
