@@ -152,7 +152,7 @@ def process_keyboard_events():
 
 
 def compute_motors():
-    m1, m2, m3, m4 = 0, 10, 0, 0
+    m1, m2, m3, m4 = 0, HOVER_BASELINE, 0, 0
 
     if "w" in active_keys:
         m1 += 50
@@ -215,11 +215,11 @@ def compute_motors_from_controller(js):
     elif turn < 0:     # steer left: boost m4
         m4 += -turn * CONTROLLER_MAX_POWER
 
-    m2 += HOVER_BASELINE
-    if vertical > 0:
-        m2 += vertical * CONTROLLER_MAX_POWER
-    elif vertical < 0:
-        m3 += -vertical * CONTROLLER_MAX_POWER
+    power = vertical * CONTROLLER_MAX_POWER
+    if vertical > -HOVER_BASELINE:
+        m2 += power + (HOVER_BASELINE if vertical > 0 else 0)
+    else:
+        m3 -= power
 
     m1 = max(0, min(CONTROLLER_MAX_POWER, m1))
     m2 = max(0, min(CONTROLLER_MAX_POWER, m2))
