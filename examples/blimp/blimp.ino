@@ -48,20 +48,22 @@ const float DEG_PER_PIXEL = HORIZONTAL_FOV_DEG / MAX_W;   // MAX_W (320) comes f
 const float YAW_DEADZONE_HALF_DEG = 2;
 const float YAW_GAIN_PER_DEG = 10;                  // motor power per degree of error
 const float TURN_KD = 25;
-// const float TURN_RATE_SETTLE
-// const float TURN_DEADBAND_DEG
-// const float TURN_MAX_POWER 
-// const float TURN_KP
+// VARIABLES BELOW NOT TESTED
+const float TURN_RATE_SETTLE = 2;
+const float TURN_DEADBAND_DEG = 2;
+const float TURN_MAX_POWER = MOTOR_MAX;
+const float TURN_KP = 2;
+const float gyroBiasDegPerSec = 0;
 
 // Wiggle-search tuning (used in MODE_PROPORTIONAL when the target isn't
 // visible). Noise amplitude ramps up the longer the search has been running,
 // so early wiggles are gentle and later ones sweep harder in case the target
 // has drifted far off-frame (or the blimp has drifted far from the last
 // known bearing).
-// const unsigned long WIGGLE_RAMP_MS = 5000;      // ms of searching to reach full amplitude
-// const unsigned long WIGGLE_PERIOD_MS = 2000;    // ms per full left-right sweep cycle
-// const int WIGGLE_MIN_AMPLITUDE     = 10;        // starting sweep amplitude (PWM units)
-// const int WIGGLE_MAX_AMPLITUDE     = MOTOR_MAX; // amplitude stops growing past this
+const unsigned long WIGGLE_RAMP_MS = 5000;      // ms of searching to reach full amplitude
+const unsigned long WIGGLE_PERIOD_MS = 2000;    // ms per full left-right sweep cycle
+const int WIGGLE_MIN_AMPLITUDE     = 10;        // starting sweep amplitude (PWM units)
+const int WIGGLE_MAX_AMPLITUDE     = MOTOR_MAX; // amplitude stops growing past this
 
 // === Battery Monitor =========================================================
 const unsigned long BATTERY_READ_INTERVAL_MS = 500; // per BatteryMonitor.h guidance (500ms-1s)
@@ -100,6 +102,15 @@ volatile bool newControlAvailable = false;
 
 volatile unsigned long lastRecvTime = 0;
 const unsigned long CONTROL_TIMEOUT_MS = 1000;
+
+// Wraps an angle in degrees to the range [-180, 180). Used to get the
+// shortest-path turn error (e.g. going from 170 to -170 should be a
+// 20-degree turn, not a 340-degree one).
+float wrap180(float angleDeg) {
+  while (angleDeg >= 180.0f) angleDeg -= 360.0f;
+  while (angleDeg < -180.0f) angleDeg += 360.0f;
+  return angleDeg;
+}
 
 // Callback when telemetry is sent to Base Station
 void OnDataSent(const wifi_tx_info_t *info, esp_now_send_status_t status) {
@@ -219,8 +230,10 @@ void loop() {
       m2 = DEFAULT_UPWARD_POWER;
       // TODO: update closeEnough to reasonable values; maybe create a guidance.cpp/.h
       bool target_visible = (vData.w > 0 && vData.h > 0);
-
-      bool closeEnough = (vData.w > 180 && vData.h > 180);
+      bool closeEnough = (vData.w * vData.h > 22500);
+      bool  wiggleSearchActive = false;
+      float wiggleSearchStartMs = millis();
+      unsigned long wigglePhaseOffsetMs = 0;    
 
       if (!closeEnough && target_visible) {
         // yawError (degrees, computed above) replaces the old pixel-space
@@ -239,19 +252,16 @@ void loop() {
             m4 = constrain(m4, 0, MOTOR_MAX);
         }
       }
-      /*
       else if (closeEnough) {
         // Go into IMU-Based Waypoint Mode 
-        Turn using the rotation data for next waypoint: waypoint_list[next]
-        next=(next+1)%waypoint_num
         float turnedSoFar = 0;
-        while (!stale && abs(turnedSoFar - waypoint_list[next]) > TURN_DEADBAND_DEG) {
+        while (!stale && abs(turnedSoFar - waypoint_list[waypoint_index]) > TURN_DEADBAND_DEG) {
           stale = (millis() - lastRecvTime > CONTROL_TIMEOUT_MS);
           float rate = imu.readData().tz - gyroBiasDegPerSec;
-          float error = wrap180(waypoint_list[next] - turnedSoFar);
+          float error = wrap180(waypoint_list[waypoint_index] - turnedSoFar);
 
             // Preliminary PID
-            float turnPower = TURN_KP * error - TURN_KD * yawRate;
+            float turnPower = TURN_KP * error - TURN_KD * iData.tz;
             turnPower = constrain(turnPower, -TURN_MAX_POWER, TURN_MAX_POWER);
 
             if (turnPower >= 0) {        // need to yaw right: m1 up, m4 down
@@ -265,9 +275,9 @@ void loop() {
 
           if (abs(error) <= TURN_DEADBAND_DEG && abs(rate) <= TURN_RATE_SETTLE) {
             closeEnough = false;
-            distanceTraveled = 0;
         }
         }
+        waypoint_index=(waypoint_index+1) % sizeof(waypoint_index);
       }
       else {
         // Wiggle search: target isn't visible, so sweep yaw with a smooth
@@ -303,7 +313,6 @@ void loop() {
           m4 -= (-sweep); // yaw left
         }
       }
-      */
   }
   }
 
