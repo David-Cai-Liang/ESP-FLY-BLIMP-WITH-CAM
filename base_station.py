@@ -13,13 +13,29 @@ if sys.platform == "win32":
 SERIAL_PORT = "COM9"  # Adjust for your OS ('/dev/ttyUSB0' or '/dev/ttyACM0')
 BAUD_RATE = 115200
 
+FLIGHT_LOG_PATH = "flight.log"  # wiped at the start of each run, then appended to
+
 # Protocol Markers
 TELEMETRY_HEADER = b"\x00\xAA\x55\xFF"
 TELEMETRY_FOOTER = b"\xEE\xFF"
 CONTROL_HEADER = b"\x00\xBB\x66\xFF"
 
-PAYLOAD_SIZE = 40  # 4x uint16 (8B) + 4x float (16B) + 4x int16 actual motors (8B) + 1x float yaw error (4B) + 1x float batt voltage (4B)
-TOTAL_FRAME_SIZE = 4 + PAYLOAD_SIZE + 2  # 46 Bytes Total Frame
+PAYLOAD_SIZE = 41  # 4x uint16 (8B) + 4x float (16B) + 4x int16 actual motors (8B) + 1x float yaw error (4B) + 1x float batt voltage (4B) + 1x uint8 state (1B)
+TOTAL_FRAME_SIZE = 4 + PAYLOAD_SIZE + 2  # 47 Bytes Total Frame
+
+# Autonomous sub-state, reported in telemetry.state (must match blimp.ino's
+# STATE_MANUAL / STATE_TRACKING / STATE_TURNING / STATE_SEARCHING). Always
+# STATE_MANUAL while the blimp itself is in MODE_MANUAL.
+STATE_MANUAL = 0
+STATE_TRACKING = 1
+STATE_TURNING = 2
+STATE_SEARCHING = 3
+STATE_NAMES = {
+    STATE_MANUAL: "MANUAL",
+    STATE_TRACKING: "TRACKING",
+    STATE_TURNING: "TURNING",
+    STATE_SEARCHING: "SEARCHING",
+}
 
 # Yaw-to-target is now computed on the blimp (see blimp.ino: HORIZONTAL_FOV_DEG /
 # DEG_PER_PIXEL / yawError) and arrives as part of the telemetry payload below.
@@ -35,7 +51,7 @@ MODE_PROPORTIONAL = 1
 MODE_NAMES = {MODE_MANUAL: "MANUAL", MODE_PROPORTIONAL: "AUTONOMOUS (yaw-only)"}
 
 # Xbox controller tuning
-CONTROLLER_MAX_POWER = 80      # absolute cap on any motor value from the controller
+CONTROLLER_MAX_POWER = 200      # absolute cap on any motor value from the controller
 CONTROLLER_DEADZONE = 0.15      # ignore stick noise near center
 HOVER_BASELINE = 20             # matches the keyboard path's idle m2 value
 
@@ -86,6 +102,7 @@ latest_telemetry = {
     "ax": 0.0, "ay": 0.0, "az": 0.0, "tz": 0.0,
     "yaw_err": 0.0,
     "batt_voltage": 0.0,
+    "state": STATE_MANUAL,
     "delta_ms": 0.0,
     "avg_dt": 0.0,
     "fps": 0.0,
@@ -103,7 +120,7 @@ def init_keyboard_window():
     This same window also mirrors whatever gets printed to the terminal.
     """
     global screen, status_font
-    screen = pygame.display.set_mode((1200, 100))
+    screen = pygame.display.set_mode((1500, 100))
     pygame.display.set_caption("Base Station Controls (click here for keyboard focus)")
     pygame.key.set_repeat(0)  # disabled: we want press edges, not OS key-repeat
     status_font = pygame.font.SysFont("consolas,couriernew,monospace", 16)
@@ -330,8 +347,8 @@ def telemetry_reader_loop(ser):
                 avg_dt = sum(frame_deltas) / len(frame_deltas) if frame_deltas else 0.0
                 fps = 1000.0 / avg_dt if avg_dt > 0 else 0.0
 
-                cx, cy, w, h, ax, ay, az, tz, m1, m2, m3, m4, yaw_err, batt_voltage = struct.unpack(
-                    "<4H4f4hff", raw_payload
+                cx, cy, w, h, ax, ay, az, tz, m1, m2, m3, m4, yaw_err, batt_voltage, state = struct.unpack(
+                    "<4H4f4hffB", raw_payload
                 )
 
                 with telemetry_lock:
@@ -342,6 +359,7 @@ def telemetry_reader_loop(ser):
                             "ax": ax, "ay": ay, "az": az, "tz": tz,
                             "yaw_err": yaw_err,
                             "batt_voltage": batt_voltage,
+                            "state": state,
                             "delta_ms": delta_ms,
                             "avg_dt": avg_dt,
                             "fps": fps,
@@ -369,6 +387,11 @@ def main():
 
     # Clear OS buffer queue lag on launch
     ser.reset_input_buffer()
+
+    # Wipe flight.log at the start of each run, then keep it open for
+    # appending timestamped telemetry/command/latency lines for the
+    # duration of this run.
+    flight_log = open(FLIGHT_LOG_PATH, "w")
 
     # Telemetry reading/parsing runs on its own thread so it can never stall
     # the keyboard/controller polling or control-command transmission below.
@@ -436,6 +459,7 @@ def main():
                 ax, ay, az, tz = (telemetry_snapshot[k] for k in ("ax", "ay", "az", "tz"))
                 yaw_err = telemetry_snapshot["yaw_err"]
                 batt_voltage = telemetry_snapshot["batt_voltage"]
+                state = telemetry_snapshot["state"]
                 delta_ms = telemetry_snapshot["delta_ms"]
                 avg_dt = telemetry_snapshot["avg_dt"]
                 fps = telemetry_snapshot["fps"]
@@ -447,7 +471,8 @@ def main():
                     f"[TELEMETRY] Motors: {actual_motors} || "
                     f"Vision: CX:{cx:3d} CY:{cy:3d} W:{w:3d} H:{h:3d} Yaw:{yaw_err:+5.1f}deg || "
                     f"IMU: AX:{ax:5.1f} AY:{ay:5.1f} AZ:{az:5.1f} TZ:{tz:5.1f} || "
-                    f"Batt: {batt_voltage:4.2f}V {batt_flag}"
+                    f"Batt: {batt_voltage:4.2f}V {batt_flag} || "
+                    f"State: {STATE_NAMES.get(state, f'UNKNOWN({state})'):<9}"
                 )
                 command_line = (
                     f"[COMMAND] Mode: {MODE_NAMES[current_mode]:<21} || Motors: {command_motors}"
@@ -473,6 +498,15 @@ def main():
 
                 # pygame window display (same three lines)
                 render_status([telemetry_line, command_line, latency_line])
+
+                # Flight log: timestamped copy of the same three lines,
+                # flushed immediately so the file is current if the program
+                # is killed rather than exited cleanly.
+                timestamp = time.strftime("%Y-%m-%d %H:%M:%S") + f".{int((time.time() % 1) * 1000):03d}"
+                flight_log.write(
+                    f"[{timestamp}]\n{telemetry_line}\n{command_line}\n{latency_line}\n\n"
+                )
+                flight_log.flush()
 
             time.sleep(0.001)
 
@@ -510,6 +544,7 @@ def main():
         reader_thread.join(timeout=1.0)
 
         ser.close()
+        flight_log.close()
         if joystick is not None:
             pygame.joystick.quit()
         pygame.quit()

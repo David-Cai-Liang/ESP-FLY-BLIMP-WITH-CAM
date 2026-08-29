@@ -5,6 +5,7 @@
 // REPLACE WITH YOUR BLIMP MAC ADDRESS
 // {0x68, 0xee, 0x8f, 0x50, 0x28, 0x58}
 // {0x68, 0xee, 0x8f, 0x50, 0x26, 0xd0} 
+
 // {0x68, 0xee, 0x8f, 0x50, 0x28, 0xbc}
 // {0x68, 0xee, 0x8f, 0x50, 0x28, 0x94}
 // {0x68, 0xee, 0x8f, 0x50, 0x26, 0xa8}
@@ -24,6 +25,7 @@ typedef struct __attribute__((packed)) {
   int16_t m1, m2, m3, m4; // actual, post-constrain motor outputs from the blimp
   float yawError;         // degrees of yaw needed to center the target, computed on the blimp
   float battVoltage;      // battery voltage in volts, from the blimp's BatteryMonitor
+  uint8_t state;           // autonomous sub-state: 0=MANUAL 1=TRACKING 2=TURNING 3=SEARCHING (opaque to the base station -- just relayed)
 } TelemetryPacket;
 
 // Framed Protocol Markers

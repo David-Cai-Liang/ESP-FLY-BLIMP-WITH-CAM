@@ -35,6 +35,21 @@ const int MOTOR_M4_FL = 1; // Front Left  (M4) -> Pin 1 (Orange Wire)
 #define MODE_PROPORTIONAL 1
 uint8_t currentMode = MODE_MANUAL;
 
+// === Autonomous Sub-State (reported in telemetry) ===========================
+// Only meaningful when currentMode == MODE_PROPORTIONAL; while in MODE_MANUAL
+// the state is always STATE_MANUAL. Within MODE_PROPORTIONAL:
+//   STATE_TRACKING  - target is visible but not close enough yet; yawing
+//                      toward it with the proportional controller
+//   STATE_TURNING   - target is close enough; executing an IMU-based
+//                      waypoint turn
+//   STATE_SEARCHING - target isn't visible (or the base station link has
+//                      gone stale); sweeping/wiggling to reacquire it
+#define STATE_MANUAL    0
+#define STATE_TRACKING  1
+#define STATE_TURNING   2
+#define STATE_SEARCHING 3
+uint8_t currentState = STATE_MANUAL;
+
 const int MOTOR_MAX = 255;               // analogWrite() PWM ceiling (8-bit default)
 const int DEFAULT_FORWARD_POWER = 10;
 const int DEFAULT_UPWARD_POWER = 20;
@@ -74,6 +89,7 @@ unsigned long lastBattReadMs = 0;
 // {0x30, 0x30, 0xF9, 0x17, 0xFB, 0x8C}
 // {0x30, 0x30, 0xf9, 0x16, 0xa1, 0x0c}
 // {0xdc, 0xda, 0x0c, 0x57, 0x56, 0x0c}
+// {0x30, 0x30, 0xF9, 0x17, 0xFD, 0x40}
 uint8_t baseStationAddress[] = {0x30, 0x30, 0xF9, 0x17, 0xFB, 0x8C};
 
 // Telemetry sent from Blimp to Base Station
@@ -83,6 +99,7 @@ typedef struct __attribute__((packed)) {
   MotorData motors;  // actual, post-constrain M1-M4 outputs (4 x int16_t)
   float yawError;    // degrees of yaw needed to center the target (+ => target is right of center)
   float battVoltage; // battery voltage in volts, from BatteryMonitor
+  uint8_t state;     // STATE_MANUAL / STATE_TRACKING / STATE_TURNING / STATE_SEARCHING
 } TelemetryPacket;
 
 // Motor control commands received from Base Station
@@ -207,6 +224,7 @@ void loop() {
     // Drive motors directly from the base station's ControlPacket.
     // Watchdog: if no packet has arrived within CONTROL_TIMEOUT_MS, force zero.
     newControlAvailable = false;
+    currentState = STATE_MANUAL;
     m1 = stale ? 0 : incomingControl.motors[0] - TURN_KD * iData.tz;
     m2 = stale ? 0 : incomingControl.motors[1];
     m3 = stale ? 0 : incomingControl.motors[2];
@@ -215,6 +233,11 @@ void loop() {
   } else { // MODE_PROPORTIONAL
     // Manual stick input is ignored in this mode.
     newControlAvailable = false;
+
+    // Default sub-state while stale (or before the checks below run): the
+    // blimp isn't tracking a known target or mid-turn, so report it as
+    // searching -- matches the wiggle-search branch being the fallback.
+    currentState = STATE_SEARCHING;
     
     // {135.0, 45.0, 135.0, 45.0}
     // {90.0, 90.0, 90.0, 90.0}
@@ -230,12 +253,13 @@ void loop() {
       m2 = DEFAULT_UPWARD_POWER;
       // TODO: update closeEnough to reasonable values; maybe create a guidance.cpp/.h
       bool target_visible = (vData.w > 0 && vData.h > 0);
-      bool closeEnough = (vData.w * vData.h > 22500);
+      bool closeEnough = (vData.w * vData.h > 20000);
       bool  wiggleSearchActive = false;
       float wiggleSearchStartMs = millis();
       unsigned long wigglePhaseOffsetMs = 0;    
 
       if (!closeEnough && target_visible) {
+        currentState = STATE_TRACKING;
         // yawError (degrees, computed above) replaces the old pixel-space
         // center_x/error_x calc — same P controller, just working in
         // degrees instead of pixels.
@@ -253,6 +277,7 @@ void loop() {
         }
       }
       else if (closeEnough) {
+        currentState = STATE_TURNING;
         // Go into IMU-Based Waypoint Mode 
         float turnedSoFar = 0;
         while (!stale && abs(turnedSoFar - waypoint_list[waypoint_index]) > TURN_DEADBAND_DEG) {
@@ -280,6 +305,7 @@ void loop() {
         waypoint_index=(waypoint_index+1) % sizeof(waypoint_index);
       }
       else {
+        currentState = STATE_SEARCHING;
         // Wiggle search: target isn't visible, so sweep yaw with a smooth
         // sine wave while continuing to fly forward. The sweep amplitude
         // ramps up the longer the search has been running (i.e. the longer
@@ -329,14 +355,17 @@ void loop() {
   telemetry.motors = buildMotorData(m1, m2, m3, m4);
   telemetry.yawError = yawError;
   telemetry.battVoltage = battMonitor.getVoltage();
+  telemetry.state = currentState;
 
   esp_err_t sendResult = esp_now_send(baseStationAddress, (uint8_t *)&telemetry, sizeof(telemetry));
   if (sendResult != ESP_OK) {
     Serial.printf("[ESP-NOW] Telemetry send failed to enqueue, err=%d\n", sendResult);
   }
 
-  Serial.printf("[MODE] %s | [MOTORS] M1: %d | M2: %d | M3: %d | M4: %d\n",
-                currentMode == MODE_MANUAL ? "MANUAL" : "PROPORTIONAL", m1, m2, m3, m4);
+  const char *stateNames[] = {"MANUAL", "TRACKING", "TURNING", "SEARCHING"};
+  Serial.printf("[MODE] %s | [STATE] %s | [MOTORS] M1: %d | M2: %d | M3: %d | M4: %d\n",
+                currentMode == MODE_MANUAL ? "MANUAL" : "PROPORTIONAL",
+                stateNames[currentState], m1, m2, m3, m4);
 
   analogWrite(MOTOR_M1_FR, m1);
   analogWrite(MOTOR_M2_RR, m2); 
