@@ -24,26 +24,11 @@ const int MOTOR_M3_RL = 3; // Rear Left   (M3) -> Pin 3 (Blue Wire)
 const int MOTOR_M4_FL = 1; // Front Left  (M4) -> Pin 1 (Orange Wire)
 
 // === Control Mode (runtime select, driven by the base station) =============
-// MODE_MANUAL       - motors driven directly by ControlPacket.motors from the base station
-// MODE_PROPORTIONAL - motors driven by a P controller on vision blob yaw error,
-//                      incoming manual stick input is ignored
-// The active mode is no longer a compile-time #define: it's carried in every
-// ControlPacket as `mode`, so the pilot can flip it live from base_station.py
-// (the 'M' key) without reflashing. currentMode defaults to MODE_MANUAL until
-// the first packet arrives, matching the watchdog's fail-safe-to-zero posture.
 #define MODE_MANUAL       0
 #define MODE_PROPORTIONAL 1
-uint8_t currentMode = MODE_MANUAL;
+volatile uint8_t currentMode = MODE_MANUAL;
 
 // === Autonomous Sub-State (reported in telemetry) ===========================
-// Only meaningful when currentMode == MODE_PROPORTIONAL; while in MODE_MANUAL
-// the state is always STATE_MANUAL. Within MODE_PROPORTIONAL:
-//   STATE_TRACKING  - target is visible but not close enough yet; yawing
-//                      toward it with the proportional controller
-//   STATE_TURNING   - target is close enough; executing an IMU-based
-//                      waypoint turn
-//   STATE_SEARCHING - target isn't visible (or the base station link has
-//                      gone stale); sweeping/wiggling to reacquire it
 #define STATE_MANUAL    0
 #define STATE_TRACKING  1
 #define STATE_TURNING   2
@@ -55,41 +40,29 @@ const int DEFAULT_FORWARD_POWER = 10;
 const int DEFAULT_UPWARD_POWER = 20;
 
 // Camera geometry: degrees of yaw needed to center a target on the x-axis.
-// Simple flat model — every pixel subtends an equal slice of the horizontal
-// FOV. A more accurate model (accounting for lens distortion) can replace
-// this later without changing the telemetry layout.
 const float HORIZONTAL_FOV_DEG = 57.4;                    // camera's horizontal field of view
 const float DEG_PER_PIXEL = HORIZONTAL_FOV_DEG / MAX_W;   // MAX_W (320) comes from Vision.h
 const float YAW_DEADZONE_HALF_DEG = 2;
 const float YAW_GAIN_PER_DEG = 10;                  // motor power per degree of error
 const float TURN_KD = 25;
-// VARIABLES BELOW NOT TESTED
+
 const float TURN_RATE_SETTLE = 2;
 const float TURN_DEADBAND_DEG = 2;
 const float TURN_MAX_POWER = MOTOR_MAX;
 const float TURN_KP = 2;
 const float gyroBiasDegPerSec = 0;
 
-// Wiggle-search tuning (used in MODE_PROPORTIONAL when the target isn't
-// visible). Noise amplitude ramps up the longer the search has been running,
-// so early wiggles are gentle and later ones sweep harder in case the target
-// has drifted far off-frame (or the blimp has drifted far from the last
-// known bearing).
+// Wiggle-search tuning
 const unsigned long WIGGLE_RAMP_MS = 5000;      // ms of searching to reach full amplitude
 const unsigned long WIGGLE_PERIOD_MS = 2000;    // ms per full left-right sweep cycle
 const int WIGGLE_MIN_AMPLITUDE     = 10;        // starting sweep amplitude (PWM units)
 const int WIGGLE_MAX_AMPLITUDE     = MOTOR_MAX; // amplitude stops growing past this
 
 // === Battery Monitor =========================================================
-const unsigned long BATTERY_READ_INTERVAL_MS = 500; // per BatteryMonitor.h guidance (500ms-1s)
+const unsigned long BATTERY_READ_INTERVAL_MS = 500;
 BatteryMonitor battMonitor;
 unsigned long lastBattReadMs = 0;
 
-// REPLACE WITH YOUR BASE STATION MAC ADDRESS
-// {0x30, 0x30, 0xF9, 0x17, 0xFB, 0x8C}
-// {0x30, 0x30, 0xf9, 0x16, 0xa1, 0x0c}
-// {0xdc, 0xda, 0x0c, 0x57, 0x56, 0x0c}
-// {0x30, 0x30, 0xF9, 0x17, 0xFD, 0x40}
 uint8_t baseStationAddress[] = {0x30, 0x30, 0xF9, 0x17, 0xFB, 0x8C};
 
 // Telemetry sent from Blimp to Base Station
@@ -114,19 +87,51 @@ Vision vision;
 #endif
 IMU imu;
 
-ControlPacket incomingControl = {{0, 0, 0, 0}};
-volatile bool newControlAvailable = false;
+volatile ControlPacket incomingControl = {{0, 0, 0, 0}};
 
 volatile unsigned long lastRecvTime = 0;
 const unsigned long CONTROL_TIMEOUT_MS = 1000;
 
-// Wraps an angle in degrees to the range [-180, 180). Used to get the
-// shortest-path turn error (e.g. going from 170 to -170 should be a
-// 20-degree turn, not a 340-degree one).
+// === Waypoint Turn State (persisted across loop() iterations) ==============
+const float waypoint_list[] = {90.0, 90.0, 90.0, 90.0};
+const int waypoint_count = sizeof(waypoint_list) / sizeof(waypoint_list[0]);
+int waypoint_index = 0;
+float turnedSoFar = 0;
+bool turnInProgress = false;
+unsigned long lastTurnStepMs = 0;
+
+// === Wiggle-Search State (persisted across loop() iterations) ==============
+bool wiggleSearchActive = false;
+unsigned long wiggleSearchStartMs = 0;
+unsigned long wigglePhaseOffsetMs = 0;
+
+// Wraps an angle in degrees to the range [-180, 180).
 float wrap180(float angleDeg) {
   while (angleDeg >= 180.0f) angleDeg -= 360.0f;
   while (angleDeg < -180.0f) angleDeg += 360.0f;
   return angleDeg;
+}
+
+void sendTelemetry(const VisionData &vData, const IMUData &iData,
+                    int16_t m1, int16_t m2, int16_t m3, int16_t m4,
+                    float yawError, uint8_t state) {
+  TelemetryPacket telemetry;
+  telemetry.vision = vData;
+  telemetry.imu = iData;
+  telemetry.motors = buildMotorData(m1, m2, m3, m4);
+  telemetry.yawError = yawError;
+  telemetry.battVoltage = battMonitor.getVoltage();
+  telemetry.state = state;
+
+  esp_err_t sendResult = esp_now_send(baseStationAddress, (uint8_t *)&telemetry, sizeof(telemetry));
+  if (sendResult != ESP_OK) {
+    Serial.printf("[ESP-NOW] Telemetry send failed to enqueue, err=%d\n", sendResult);
+  }
+
+  const char *stateNames[] = {"MANUAL", "TRACKING", "TURNING", "SEARCHING"};
+  Serial.printf("[MODE] %s | [STATE] %s | [MOTORS] M1: %d | M2: %d | M3: %d | M4: %d\n",
+                currentMode == MODE_MANUAL ? "MANUAL" : "PROPORTIONAL",
+                stateNames[state], m1, m2, m3, m4);
 }
 
 // Callback when telemetry is sent to Base Station
@@ -139,33 +144,29 @@ void OnDataSent(const wifi_tx_info_t *info, esp_now_send_status_t status) {
 // Callback when motor controls are received from Base Station
 void OnDataRecv(const esp_now_recv_info_t *esp_now_info, const uint8_t *incomingData, int len) {
   if (len == sizeof(ControlPacket)) {
-    memcpy(&incomingControl, incomingData, sizeof(ControlPacket));
+    memcpy((void*)&incomingControl, incomingData, sizeof(ControlPacket));
     if (incomingControl.mode == MODE_MANUAL || incomingControl.mode == MODE_PROPORTIONAL) {
       currentMode = incomingControl.mode;
     }
-    newControlAvailable = true;
     lastRecvTime = millis();
   }
 }
 
 void setup() {
   Serial.begin(115200);
-  randomSeed(esp_random()); // hardware RNG seed, used by the wiggle search
+  randomSeed(esp_random());
   WiFi.mode(WIFI_STA);
   WiFi.disconnect();
   esp_wifi_set_channel(1, WIFI_SECOND_CHAN_NONE);
 
-  // Initialize ESP-NOW
   if (esp_now_init() != ESP_OK) {
     Serial.println("Error initializing ESP-NOW");
     return;
   }
 
-  // Register ESP-NOW Callbacks
   esp_now_register_send_cb(OnDataSent);
   esp_now_register_recv_cb(OnDataRecv);
 
-  // Register Base Station as Peer
   memset(&peerInfo, 0, sizeof(peerInfo));
   memcpy(peerInfo.peer_addr, baseStationAddress, 6);
   peerInfo.channel = 0;
@@ -176,7 +177,6 @@ void setup() {
     return;
   }
 
-  // Initialize Sensors and Camera Hardware
   imu.setup();
 #if use_camera
   vision.setup();
@@ -186,7 +186,7 @@ void setup() {
 
 void loop() {
   // 1. Process Vision & IMU Telemetry
-  VisionData vData = {}; // zero-initialized: all 0
+  VisionData vData = {};
 
 #if use_camera
   FrameResult result = vision.processFrame();
@@ -194,25 +194,14 @@ void loop() {
     vData = vision.buildVisionData(result.blob);
   }
 #endif
-  // use_camera == 0: camera is bypassed entirely; vData stays [0,0,0,0].
 
   IMUData iData = imu.readData();
 
-  // Battery voltage: throttled to BATTERY_READ_INTERVAL_MS since ADC
-  // averaging (8 samples) isn't needed every loop iteration; the cached
-  // value from the last read is reused for every telemetry packet in
-  // between reads via battMonitor.getVoltage().
   if (millis() - lastBattReadMs >= BATTERY_READ_INTERVAL_MS) {
     lastBattReadMs = millis();
     battMonitor.update();
-    // if (battMonitor.isLowBattery()) {
-    //   Serial.printf("[BATTERY] LOW BATTERY WARNING: %.2fV\n", battMonitor.getVoltage());
-    // }
   }
 
-  // Degrees of yaw needed to bring the target's blob center to the middle
-  // of the frame. Computed every loop (not just in PROPORTIONAL mode) so
-  // it's always available in telemetry for monitoring/tuning.
   float yawError = ((float)vData.cx - (MAX_W / 2.0f)) * DEG_PER_PIXEL;
 
   bool stale = (millis() - lastRecvTime > CONTROL_TIMEOUT_MS);
@@ -221,9 +210,6 @@ void loop() {
   int16_t m1 = 0, m2 = 0, m3 = 0, m4 = 0;
 
   if (currentMode == MODE_MANUAL) {
-    // Drive motors directly from the base station's ControlPacket.
-    // Watchdog: if no packet has arrived within CONTROL_TIMEOUT_MS, force zero.
-    newControlAvailable = false;
     currentState = STATE_MANUAL;
     m1 = stale ? 0 : incomingControl.motors[0] - TURN_KD * iData.tz;
     m2 = stale ? 0 : incomingControl.motors[1];
@@ -231,115 +217,98 @@ void loop() {
     m4 = stale ? 0 : incomingControl.motors[3] + TURN_KD * iData.tz;
 
   } else { // MODE_PROPORTIONAL
-    // Manual stick input is ignored in this mode.
-    newControlAvailable = false;
-
-    // Default sub-state while stale (or before the checks below run): the
-    // blimp isn't tracking a known target or mid-turn, so report it as
-    // searching -- matches the wiggle-search branch being the fallback.
     currentState = STATE_SEARCHING;
-    
-    // {135.0, 45.0, 135.0, 45.0}
-    // {90.0, 90.0, 90.0, 90.0}
-    float waypoint_list[] = {90.0, 90.0, 90.0, 90.0}; // the values are turning angles for each waypoint
-    int waypoint_index = 0;
 
-    // Same watchdog as manual mode: if the base station link itself has gone
-    // stale, stay at zero rather than continuing to fly blind.
     if (!stale) {
-      // Fly forward by default; turning is done by decreasing power to one
-      // of the two rear motors, not by adding power to the other.
       m1 = m4 = DEFAULT_FORWARD_POWER;
       m2 = DEFAULT_UPWARD_POWER;
-      // TODO: update closeEnough to reasonable values; maybe create a guidance.cpp/.h
-      bool target_visible = (vData.w > 0 && vData.h > 0);
-      bool closeEnough = (vData.w * vData.h > 20000);
-      bool  wiggleSearchActive = false;
-      float wiggleSearchStartMs = millis();
-      unsigned long wigglePhaseOffsetMs = 0;    
 
-      if (!closeEnough && target_visible) {
-        currentState = STATE_TRACKING;
-        // yawError (degrees, computed above) replaces the old pixel-space
-        // center_x/error_x calc — same P controller, just working in
-        // degrees instead of pixels.
-        if (fabs(yawError) > YAW_DEADZONE_HALF_DEG) {
-          int correction = (int)((fabs(yawError) - YAW_DEADZONE_HALF_DEG) * YAW_GAIN_PER_DEG);
-          if (yawError > 0) {
-            m4 += correction;    // target right of center -> yaw right by increasing M4 (Front Left)
-          } else {
-            m1 += correction;    // target right of center -> yaw right by increasing M1 (Front Right)
-          }
-            m1 -= TURN_KD * iData.tz;
-            m1 = constrain(m1, 0, MOTOR_MAX);
-            m4 += TURN_KD * iData.tz;
-            m4 = constrain(m4, 0, MOTOR_MAX);
-        }
-      }
-      else if (closeEnough) {
+      if (turnInProgress) {
         currentState = STATE_TURNING;
-        // Go into IMU-Based Waypoint Mode 
-        float turnedSoFar = 0;
-        while (!stale && abs(turnedSoFar - waypoint_list[waypoint_index]) > TURN_DEADBAND_DEG) {
-          stale = (millis() - lastRecvTime > CONTROL_TIMEOUT_MS);
-          float rate = imu.readData().tz - gyroBiasDegPerSec;
-          float error = wrap180(waypoint_list[waypoint_index] - turnedSoFar);
 
-            // Preliminary PID
-            float turnPower = TURN_KP * error - TURN_KD * iData.tz;
-            turnPower = constrain(turnPower, -TURN_MAX_POWER, TURN_MAX_POWER);
+        unsigned long nowMs = millis();
+        unsigned long dtMs = nowMs - lastTurnStepMs;
+        if (dtMs > 200) dtMs = 200;
+        lastTurnStepMs = nowMs;
 
-            if (turnPower >= 0) {        // need to yaw right: m1 up, m4 down
-              m1 = constrain((int)turnPower, 0, MOTOR_MAX);
-              m4 = 0;
-            } else {                     // need to yaw left: m4 up, m1 down
-              m4 = constrain((int)-turnPower, 0, MOTOR_MAX);
-              m1 = 0;
+        float rate = iData.tz - gyroBiasDegPerSec;
+        turnedSoFar += rate * (dtMs / 1000.0f);
+
+        float error = wrap180(waypoint_list[waypoint_index] - turnedSoFar);
+
+        float turnPower = TURN_KP * error - TURN_KD * iData.tz;
+        turnPower = constrain(turnPower, -TURN_MAX_POWER, TURN_MAX_POWER);
+
+        if (turnPower >= 0) {        // need to yaw right: m1 up, m4 down
+          m1 = constrain((int)turnPower, 0, MOTOR_MAX);
+          m4 = 0;
+        } else {                     // need to yaw left: m4 up, m1 down
+          m4 = constrain((int)-turnPower, 0, MOTOR_MAX);
+          m1 = 0;
+        }
+        m2 = 0; m3 = 0;
+
+        if (abs(error) <= TURN_DEADBAND_DEG && abs(rate) <= TURN_RATE_SETTLE) {
+          turnInProgress = false;
+          waypoint_index = (waypoint_index + 1) % waypoint_count;
+        }
+
+      } else {
+        bool target_visible = (vData.w > 0 && vData.h > 0);
+        bool closeEnough = (vData.w * vData.h > 20000);
+
+        if (!closeEnough && target_visible) {
+          currentState = STATE_TRACKING;
+          wiggleSearchActive = false;
+
+          if (fabs(yawError) > YAW_DEADZONE_HALF_DEG) {
+            int correction = (int)((fabs(yawError) - YAW_DEADZONE_HALF_DEG) * YAW_GAIN_PER_DEG);
+            if (yawError > 0) {
+              m4 += correction;
+            } else {
+              m1 += correction;
             }
-            m2 = 0; m3 = 0;  // no lift/forward thrust during a turn — minimizes drift off-station
+          }
 
-          if (abs(error) <= TURN_DEADBAND_DEG && abs(rate) <= TURN_RATE_SETTLE) {
-            closeEnough = false;
+          // Gyro-rate correction always applied while tracking
+          m1 -= TURN_KD * iData.tz;
+          m4 += TURN_KD * iData.tz;
         }
+        else if (closeEnough) {
+          currentState = STATE_TURNING;
+          wiggleSearchActive = false;
+          turnInProgress = true;
+          turnedSoFar = 0;
+          lastTurnStepMs = millis();
         }
-        waypoint_index=(waypoint_index+1) % sizeof(waypoint_index);
-      }
-      else {
-        currentState = STATE_SEARCHING;
-        // Wiggle search: target isn't visible, so sweep yaw with a smooth
-        // sine wave while continuing to fly forward. The sweep amplitude
-        // ramps up the longer the search has been running (i.e. the longer
-        // we've gone without a fix), so we start with small nudges and
-        // escalate to wider sweeps the farther/longer we've been searching
-        // blind. A randomized phase offset keeps successive searches from
-        // sweeping the exact same way every time.
-        if (!wiggleSearchActive) {
-          wiggleSearchActive = true;
-          wiggleSearchStartMs = millis();
-          wigglePhaseOffsetMs = random(0, WIGGLE_PERIOD_MS);
-        }
+        else {
+          currentState = STATE_SEARCHING;
 
-        unsigned long searchElapsedMs = millis() - wiggleSearchStartMs;
-        float rampFraction = (float)searchElapsedMs / (float)WIGGLE_RAMP_MS;
-        rampFraction = constrain(rampFraction, 0.0, 1.0);
+          if (!wiggleSearchActive) {
+            wiggleSearchActive = true;
+            wiggleSearchStartMs = millis();
+            wigglePhaseOffsetMs = random(0, WIGGLE_PERIOD_MS);
+          }
 
-        int amplitude = WIGGLE_MIN_AMPLITUDE +
-                        (int)(rampFraction * (WIGGLE_MAX_AMPLITUDE - WIGGLE_MIN_AMPLITUDE));
+          unsigned long searchElapsedMs = millis() - wiggleSearchStartMs;
+          float rampFraction = (float)searchElapsedMs / (float)WIGGLE_RAMP_MS;
+          rampFraction = constrain(rampFraction, 0.0, 1.0);
 
-        // Phase advances steadily with elapsed time, one full sweep every
-        // WIGGLE_PERIOD_MS; sin() gives a smooth back-and-forth rather than
-        // the jitter of fresh-random-every-loop noise.
-        unsigned long phaseMs = (searchElapsedMs + wigglePhaseOffsetMs) % WIGGLE_PERIOD_MS;
-        float phase = 2.0 * PI * (float)phaseMs / (float)WIGGLE_PERIOD_MS;
-        int sweep = (int)(amplitude * sin(phase));
+          int amplitude = WIGGLE_MIN_AMPLITUDE +
+                          (int)(rampFraction * (WIGGLE_MAX_AMPLITUDE - WIGGLE_MIN_AMPLITUDE));
 
-        if (sweep >= 0) {
-          m1 -= sweep; // yaw right
-        } else {
-          m4 -= (-sweep); // yaw left
+          unsigned long phaseMs = (searchElapsedMs + wigglePhaseOffsetMs) % WIGGLE_PERIOD_MS;
+          float phase = 2.0 * PI * (float)phaseMs / (float)WIGGLE_PERIOD_MS;
+          int sweep = (int)(amplitude * sin(phase));
+
+          if (sweep >= 0) {
+            m1 -= sweep;
+          } else {
+            m4 -= (-sweep);
+          }
         }
       }
-  }
+    }
   }
 
   m1 = constrain(m1, 0, MOTOR_MAX);
@@ -347,25 +316,8 @@ void loop() {
   m3 = constrain(m3, 0, MOTOR_MAX);
   m4 = constrain(m4, 0, MOTOR_MAX);
 
-  // 3. Transmit Telemetry Packet to Base Station, now that the actual
-  // (post-constrain) motor outputs for this loop iteration are known.
-  TelemetryPacket telemetry;
-  telemetry.vision = vData;
-  telemetry.imu = iData;
-  telemetry.motors = buildMotorData(m1, m2, m3, m4);
-  telemetry.yawError = yawError;
-  telemetry.battVoltage = battMonitor.getVoltage();
-  telemetry.state = currentState;
-
-  esp_err_t sendResult = esp_now_send(baseStationAddress, (uint8_t *)&telemetry, sizeof(telemetry));
-  if (sendResult != ESP_OK) {
-    Serial.printf("[ESP-NOW] Telemetry send failed to enqueue, err=%d\n", sendResult);
-  }
-
-  const char *stateNames[] = {"MANUAL", "TRACKING", "TURNING", "SEARCHING"};
-  Serial.printf("[MODE] %s | [STATE] %s | [MOTORS] M1: %d | M2: %d | M3: %d | M4: %d\n",
-                currentMode == MODE_MANUAL ? "MANUAL" : "PROPORTIONAL",
-                stateNames[currentState], m1, m2, m3, m4);
+  // 3. Transmit Telemetry Packet to Base Station
+  sendTelemetry(vData, iData, m1, m2, m3, m4, yawError, currentState);
 
   analogWrite(MOTOR_M1_FR, m1);
   analogWrite(MOTOR_M2_RR, m2); 
