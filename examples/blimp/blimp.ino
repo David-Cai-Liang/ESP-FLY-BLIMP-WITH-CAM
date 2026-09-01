@@ -39,13 +39,13 @@ const int MOTOR_MAX = 255;               // analogWrite() PWM ceiling (8-bit def
 const int DEFAULT_FORWARD_POWER = 10;
 const int DEFAULT_UPWARD_POWER = 20;
 
-// Camera geometry: degrees of yaw needed to center a target on the x-axis.
+// Camera Parameters, In Degrees
 const float HORIZONTAL_FOV_DEG = 57.4;                    // camera's horizontal field of view
 const float DEG_PER_PIXEL = HORIZONTAL_FOV_DEG / MAX_W;   // MAX_W (320) comes from Vision.h
 const float YAW_DEADZONE_HALF_DEG = 2;
 const float YAW_GAIN_PER_DEG = 10;                        // motor power per degree of error
 
-//Every below using Radians
+//IMU Parameters, In Radians
 const float TURN_KD = 25;                           
 const float TURN_RATE_SETTLE = PI/6;
 const float TURN_DEADBAND_RAD = PI/6;
