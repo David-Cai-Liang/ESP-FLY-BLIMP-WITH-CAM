@@ -46,11 +46,12 @@ const float YAW_DEADZONE_HALF_DEG = 2;
 const float YAW_GAIN_PER_DEG = 10;                        // motor power per degree of error
 
 //IMU Parameters, In Radians
-const float TURN_KD = 25;                           
+const float STRAIGHT_KD = 25;
+const float TURN_KD = 10;   
+const float TURN_KP = 20;                           
 const float TURN_RATE_SETTLE = PI/6;
 const float TURN_DEADBAND_RAD = PI/6;
 const float TURN_MAX_POWER = MOTOR_MAX;
-const float TURN_KP = 30;
 const float gyroBiasRadPerSec = 0;
 
 // Wiggle-search tuning
@@ -217,10 +218,10 @@ void loop() {
 
   if (currentMode == MODE_MANUAL) {
     currentState = STATE_MANUAL;
-    m1 = stale ? 0 : incomingControl.motors[0] - TURN_KD * iData.tz;
+    m1 = stale ? 0 : incomingControl.motors[0] - STRAIGHT_KD * iData.tz;
     m2 = stale ? 0 : incomingControl.motors[1];
     m3 = stale ? 0 : incomingControl.motors[2];
-    m4 = stale ? 0 : incomingControl.motors[3] + TURN_KD * iData.tz;
+    m4 = stale ? 0 : incomingControl.motors[3] + STRAIGHT_KD * iData.tz;
 
   } else { // MODE_PROPORTIONAL
     currentState = STATE_SEARCHING;
@@ -249,7 +250,7 @@ void loop() {
           m4 += correction;
         }
         m1 -= TURN_KD * iData.tz;
-        m4 += TURN_KD * iData.tz;
+        m4 += TURN__KD * iData.tz;
 
         if (abs(error) <= TURN_DEADBAND_RAD) {
           turnInProgress = false;
