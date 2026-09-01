@@ -43,14 +43,15 @@ const int DEFAULT_UPWARD_POWER = 20;
 const float HORIZONTAL_FOV_DEG = 57.4;                    // camera's horizontal field of view
 const float DEG_PER_PIXEL = HORIZONTAL_FOV_DEG / MAX_W;   // MAX_W (320) comes from Vision.h
 const float YAW_DEADZONE_HALF_DEG = 2;
-const float YAW_GAIN_PER_DEG = 10;                  // motor power per degree of error
-const float TURN_KD = 25;
+const float YAW_GAIN_PER_DEG = 10;                        // motor power per degree of error
 
-const float TURN_RATE_SETTLE = 2;
-const float TURN_DEADBAND_DEG = 2;
+//Every below using Radians
+const float TURN_KD = 25;                           
+const float TURN_RATE_SETTLE = PI/6;
+const float TURN_DEADBAND_RAD = PI/6;
 const float TURN_MAX_POWER = MOTOR_MAX;
-const float TURN_KP = 2;
-const float gyroBiasDegPerSec = 0;
+const float TURN_KP = 30;
+const float gyroBiasRadPerSec = 0;
 
 // Wiggle-search tuning
 const unsigned long WIGGLE_RAMP_MS = 5000;      // ms of searching to reach full amplitude
@@ -98,7 +99,7 @@ volatile unsigned long lastRecvTime = 0;
 const unsigned long CONTROL_TIMEOUT_MS = 1000;
 
 // === Waypoint Turn State (persisted across loop() iterations) ==============
-const float waypoint_list[] = {90.0, 90.0, 90.0, 90.0};
+const float waypoint_list[] = {PI/2, PI/2, PI/2, PI/2};
 const int waypoint_count = sizeof(waypoint_list) / sizeof(waypoint_list[0]);
 int waypoint_index = 0;
 float turnedSoFar = 0;
@@ -110,11 +111,11 @@ bool wiggleSearchActive = false;
 unsigned long wiggleSearchStartMs = 0;
 unsigned long wigglePhaseOffsetMs = 0;
 
-// Wraps an angle in degrees to the range [-180, 180).
-float wrap180(float angleDeg) {
-  while (angleDeg >= 180.0f) angleDeg -= 360.0f;
-  while (angleDeg < -180.0f) angleDeg += 360.0f;
-  return angleDeg;
+// Wraps an angle in radians to the range [-PI, PI).
+float wrapPI(float angleRad) {
+  while (angleRad >= PI) angleRad -= 2*PI;
+  while (angleRad < -PI) angleRad += 2*PI;
+  return angleRad;
 }
 
 void sendTelemetry(const VisionData &vData, const IMUData &iData,
@@ -236,24 +237,21 @@ void loop() {
         if (dtMs > 200) dtMs = 200;
         lastTurnStepMs = nowMs;
 
-        float rate = iData.tz - gyroBiasDegPerSec;
+        float rate = iData.tz - gyroBiasRadPerSec;
         turnedSoFar += rate * (dtMs / 1000.0f);
 
-        float error = wrap180(waypoint_list[waypoint_index] - turnedSoFar);
+        float error = wrapPI(waypoint_list[waypoint_index] - turnedSoFar);
+        int correction = (int)((fabs(error) - TURN_DEADBAND_RAD) * TURN_KP);
 
-        float turnPower = TURN_KP * error - TURN_KD * iData.tz;
-        turnPower = constrain(turnPower, -TURN_MAX_POWER, TURN_MAX_POWER);
-
-        if (turnPower >= 0) {        // need to yaw right: m1 up, m4 down
-          m1 = constrain((int)turnPower, 0, MOTOR_MAX);
-          m4 = 0;
-        } else {                     // need to yaw left: m4 up, m1 down
-          m4 = constrain((int)-turnPower, 0, MOTOR_MAX);
-          m1 = 0;
+        if (error >= 0) {      
+          m1 += correction;
+        } else {                    
+          m4 += correction;
         }
-        m2 = 0; m3 = 0;
+        m1 -= TURN_KD * iData.tz;
+        m4 += TURN_KD * iData.tz;
 
-        if (abs(error) <= TURN_DEADBAND_DEG && abs(rate) <= TURN_RATE_SETTLE) {
+        if (abs(error) <= TURN_DEADBAND_RAD) {
           turnInProgress = false;
           waypoint_index = (waypoint_index + 1) % waypoint_count;
         }
