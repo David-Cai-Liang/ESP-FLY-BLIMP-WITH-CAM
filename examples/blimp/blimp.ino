@@ -36,7 +36,7 @@ volatile uint8_t currentMode = MODE_MANUAL;
 uint8_t currentState = STATE_MANUAL;
 
 const int MOTOR_MAX = 255;               // analogWrite() PWM ceiling (8-bit default)
-const int DEFAULT_FORWARD_POWER = 10;
+const int DEFAULT_FORWARD_POWER = 50;
 const int DEFAULT_UPWARD_POWER = 20;
 
 // Camera Parameters, In Degrees
@@ -44,13 +44,14 @@ const float HORIZONTAL_FOV_DEG = 57.4;                    // camera's horizontal
 const float DEG_PER_PIXEL = HORIZONTAL_FOV_DEG / MAX_W;   // MAX_W (320) comes from Vision.h
 const float YAW_DEADZONE_HALF_DEG = 2;
 const float YAW_GAIN_PER_DEG = 10;                        // motor power per degree of error
+const int TURNING_AREA = 29500;
 
 //IMU Parameters, In Radians
 const float STRAIGHT_KD = 25;
-const float TURN_KD = 10;   
-const float TURN_KP = 20;                           
-const float TURN_RATE_SETTLE = PI/6;
-const float TURN_DEADBAND_RAD = PI/6;
+const float TURN_KD = 5;   
+const float TURN_KP = 150;                           
+const float TURN_RATE_SETTLE = PI/10;
+const float TURN_DEADBAND_RAD = PI/10;
 const float TURN_MAX_POWER = MOTOR_MAX;
 const float gyroBiasRadPerSec = 0;
 
@@ -70,6 +71,7 @@ unsigned long lastBattReadMs = 0;
 // {0x30, 0x30, 0xf9, 0x16, 0xa1, 0x0c}
 // {0xdc, 0xda, 0x0c, 0x57, 0x56, 0x0c}
 // {0x30, 0x30, 0xF9, 0x17, 0xFD, 0x40}
+// {0x34, 0x85, 0x18, 0xab, 0xed, xc0}
 uint8_t baseStationAddress[] = {0x30, 0x30, 0xF9, 0x17, 0xFB, 0x8C};
 
 // Telemetry sent from Blimp to Base Station
@@ -250,16 +252,16 @@ void loop() {
           m4 += correction;
         }
         m1 -= TURN_KD * iData.tz;
-        m4 += TURN__KD * iData.tz;
+        m4 += TURN_KD * iData.tz;
 
-        if (abs(error) <= TURN_DEADBAND_RAD) {
+        if (abs(error) <= TURN_DEADBAND_RAD && abs(iData.tz) <= TURN_RATE_SETTLE) {
           turnInProgress = false;
           waypoint_index = (waypoint_index + 1) % waypoint_count;
         }
 
       } else {
         bool target_visible = (vData.w > 0 && vData.h > 0);
-        bool closeEnough = (vData.w * vData.h > 20000);
+        bool closeEnough = (vData.w * vData.h > TURNING_AREA);
 
         if (!closeEnough && target_visible) {
           currentState = STATE_TRACKING;
@@ -285,32 +287,32 @@ void loop() {
           turnedSoFar = 0;
           lastTurnStepMs = millis();
         }
-        else {
-          currentState = STATE_SEARCHING;
+        // else {
+        //   currentState = STATE_SEARCHING;
 
-          if (!wiggleSearchActive) {
-            wiggleSearchActive = true;
-            wiggleSearchStartMs = millis();
-            wigglePhaseOffsetMs = random(0, WIGGLE_PERIOD_MS);
-          }
+        //   if (!wiggleSearchActive) {
+        //     wiggleSearchActive = true;
+        //     wiggleSearchStartMs = millis();
+        //     wigglePhaseOffsetMs = random(0, WIGGLE_PERIOD_MS);
+        //   }
 
-          unsigned long searchElapsedMs = millis() - wiggleSearchStartMs;
-          float rampFraction = (float)searchElapsedMs / (float)WIGGLE_RAMP_MS;
-          rampFraction = constrain(rampFraction, 0.0, 1.0);
+        //   unsigned long searchElapsedMs = millis() - wiggleSearchStartMs;
+        //   float rampFraction = (float)searchElapsedMs / (float)WIGGLE_RAMP_MS;
+        //   rampFraction = constrain(rampFraction, 0.0, 1.0);
 
-          int amplitude = WIGGLE_MIN_AMPLITUDE +
-                          (int)(rampFraction * (WIGGLE_MAX_AMPLITUDE - WIGGLE_MIN_AMPLITUDE));
+        //   int amplitude = WIGGLE_MIN_AMPLITUDE +
+        //                   (int)(rampFraction * (WIGGLE_MAX_AMPLITUDE - WIGGLE_MIN_AMPLITUDE));
 
-          unsigned long phaseMs = (searchElapsedMs + wigglePhaseOffsetMs) % WIGGLE_PERIOD_MS;
-          float phase = 2.0 * PI * (float)phaseMs / (float)WIGGLE_PERIOD_MS;
-          int sweep = (int)(amplitude * sin(phase));
+        //   unsigned long phaseMs = (searchElapsedMs + wigglePhaseOffsetMs) % WIGGLE_PERIOD_MS;
+        //   float phase = 2.0 * PI * (float)phaseMs / (float)WIGGLE_PERIOD_MS;
+        //   int sweep = (int)(amplitude * sin(phase));
 
-          if (sweep >= 0) {
-            m1 -= sweep;
-          } else {
-            m4 -= (-sweep);
-          }
-        }
+        //   if (sweep >= 0) {
+        //     m1 -= sweep;
+        //   } else {
+        //     m4 -= (-sweep);
+        //   }
+        // }
       }
     }
   }
