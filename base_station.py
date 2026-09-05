@@ -53,7 +53,7 @@ MODE_NAMES = {MODE_MANUAL: "MANUAL", MODE_PROPORTIONAL: "AUTONOMOUS (yaw-only)"}
 # Xbox controller tuning
 CONTROLLER_MAX_POWER = 200      # absolute cap on any motor value from the controller
 CONTROLLER_DEADZONE = 0.15      # ignore stick noise near center
-HOVER_BASELINE = 20             # matches the keyboard path's idle m2 value
+DEFAULT_UPWARD_POWER = 20             # matches the keyboard path's idle m2 value
 
 # Axis indices are for the common SDL2/XInput mapping (Xbox 360 / Xbox One
 # controllers on Windows & most Linux setups via pygame 2.x). If your sticks
@@ -169,7 +169,7 @@ def process_keyboard_events():
 
 
 def compute_motors():
-    m1, m2, m3, m4 = 0, HOVER_BASELINE, 0, 0
+    m1, m2, m3, m4 = 0, DEFAULT_UPWARD_POWER, 0, 0
 
     if "w" in active_keys:
         m1 += 50
@@ -233,10 +233,8 @@ def compute_motors_from_controller(js):
         m4 += -turn * CONTROLLER_MAX_POWER
 
     power = vertical * CONTROLLER_MAX_POWER
-    if vertical > -HOVER_BASELINE:
-        m2 += power + (HOVER_BASELINE if vertical > 0 else 0)
-    else:
-        m3 -= power
+    m2 = max(0, DEFAULT_UPWARD_POWER + power);
+    m3 = max(0, -(DEFAULT_UPWARD_POWER + power));
 
     m1 = max(0, min(CONTROLLER_MAX_POWER, m1))
     m2 = max(0, min(CONTROLLER_MAX_POWER, m2))

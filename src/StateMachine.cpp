@@ -9,7 +9,7 @@ static float wrapPI(float angleRad) {
   return angleRad;
 }
 
-MotorData StateMachine::update(const VisionData &vData, const IMUData &iData, float yawError) {
+MotorData StateMachine::update(const VisionData &vData, const IMUData &iData, float yawError, float pitchError) {
   MotorData out;
   out.m1 = out.m4 = DEFAULT_FORWARD_POWER;
   out.m2 = DEFAULT_UPWARD_POWER;
@@ -50,6 +50,7 @@ MotorData StateMachine::update(const VisionData &vData, const IMUData &iData, fl
       state_ = STATE_TRACKING;
       wiggleSearchActive_ = false;
 
+      // Yaw Control
       if (fabs(yawError) > YAW_DEADZONE_HALF_DEG) {
         int correction = (int)((fabs(yawError) - YAW_DEADZONE_HALF_DEG) * YAW_GAIN_PER_DEG);
         if (yawError > 0) {
@@ -62,6 +63,14 @@ MotorData StateMachine::update(const VisionData &vData, const IMUData &iData, fl
       // Gyro-rate correction always applied while tracking
       out.m1 -= TURN_KD * iData.tz;
       out.m4 += TURN_KD * iData.tz;
+
+
+      // Pitch Control
+      if (fabs(pitchError) > PITCH_DEADZONE_HALF_DEG) {
+        int correction = (int)((fabs(pitchError) - PITCH_DEADZONE_HALF_DEG) * PITCH_GAIN_PER_DEG);
+        out.m2 = max(0, DEFAULT_UPWARD_POWER + correction);
+        out.m3 = max(0, -(DEFAULT_UPWARD_POWER + correction));
+      }
 
     } else if (closeEnough) {
       state_ = STATE_TURNING;

@@ -3,7 +3,9 @@
 
 #include <Arduino.h>
 #include <Vision.h>
+#define sensor_t adafruit_sensor_t
 #include <IMU.h>
+#undef sensor_t
 #include "Motor.h"
 
 // === Autonomous Sub-State (reported in telemetry) ===========================
@@ -25,6 +27,8 @@ namespace StateMachineConfig {
   // Camera-derived tracking parameters, in degrees
   const float YAW_DEADZONE_HALF_DEG = 2;
   const float YAW_GAIN_PER_DEG = 10;                    // motor power per degree of error
+  const float PITCH_DEADZONE_HALF_DEG = 2;
+  const float PITCH_GAIN_PER_DEG = 2;
   const uint32_t TURNING_AREA = 15000;                  // masked pixel count that triggers a waypoint turn
 
   // IMU-derived turning parameters, in radians
@@ -60,9 +64,11 @@ public:
   //   iData:    latest IMU data
   //   yawError: degrees of yaw needed to center the target
   //             (+ => target is right of center)
+  //   pitchError: degrees of pitch needed to center the target
+  //             (+ => target is down of center)
   // Returns the motor outputs for this step (pre-constrain values; the
   // caller is expected to clamp to [0, MOTOR_MAX]) and updates currentState().
-  MotorData update(const VisionData &vData, const IMUData &iData, float yawError);
+  MotorData update(const VisionData &vData, const IMUData &iData, float yawError, float pitchError);
 
   // The sub-state resulting from the most recent update() call.
   uint8_t currentState() const { return state_; }
