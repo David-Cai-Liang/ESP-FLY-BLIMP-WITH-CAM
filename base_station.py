@@ -20,7 +20,7 @@ TELEMETRY_HEADER = b"\x00\xAA\x55\xFF"
 TELEMETRY_FOOTER = b"\xEE\xFF"
 CONTROL_HEADER = b"\x00\xBB\x66\xFF"
 
-PAYLOAD_SIZE = 41  # 4x uint16 (8B) + 4x float (16B) + 4x int16 actual motors (8B) + 1x float yaw error (4B) + 1x float batt voltage (4B) + 1x uint8 state (1B)
+PAYLOAD_SIZE = 45  # Updated Payload Size: 4x uint16 (8B) + 1x uint32 (4B) + 4x float (16B) + 4x int16 (8B) + 2x float (8B) + 1x uint8 (1B)
 TOTAL_FRAME_SIZE = 4 + PAYLOAD_SIZE + 2  # 47 Bytes Total Frame
 
 # Autonomous sub-state, reported in telemetry.state (must match blimp.ino's
@@ -98,7 +98,7 @@ STATUS_FG = (0, 230, 110)
 telemetry_lock = threading.Lock()
 latest_telemetry = {
     "actual_motors": [0, 0, 0, 0],
-    "cx": 0, "cy": 0, "w": 0, "h": 0,
+    "cx": 0, "cy": 0, "w": 0, "h": 0, "pixels": 0,
     "ax": 0.0, "ay": 0.0, "az": 0.0, "tz": 0.0,
     "yaw_err": 0.0,
     "batt_voltage": 0.0,
@@ -345,15 +345,13 @@ def telemetry_reader_loop(ser):
                 avg_dt = sum(frame_deltas) / len(frame_deltas) if frame_deltas else 0.0
                 fps = 1000.0 / avg_dt if avg_dt > 0 else 0.0
 
-                cx, cy, w, h, ax, ay, az, tz, m1, m2, m3, m4, yaw_err, batt_voltage, state = struct.unpack(
-                    "<4H4f4hffB", raw_payload
-                )
+                cx, cy, w, h, pixels, ax, ay, az, tz, m1, m2, m3, m4, yaw_err, batt_voltage, state = struct.unpack("<4HI4f4hffB", raw_payload)
 
                 with telemetry_lock:
                     latest_telemetry.update(
                         {
                             "actual_motors": [m1, m2, m3, m4],
-                            "cx": cx, "cy": cy, "w": w, "h": h,
+                            "cx": cx, "cy": cy, "w": w, "h": h, "pixels": pixels,
                             "ax": ax, "ay": ay, "az": az, "tz": tz,
                             "yaw_err": yaw_err,
                             "batt_voltage": batt_voltage,
@@ -453,7 +451,7 @@ def main():
                 last_seen_frame_count = telemetry_snapshot["total_frames"]
 
                 actual_motors = telemetry_snapshot["actual_motors"]
-                cx, cy, w, h = (telemetry_snapshot[k] for k in ("cx", "cy", "w", "h"))
+                cx, cy, w, h, pixels = (telemetry_snapshot[k] for k in ("cx", "cy", "w", "h", "pixels"))
                 ax, ay, az, tz = (telemetry_snapshot[k] for k in ("ax", "ay", "az", "tz"))
                 yaw_err = telemetry_snapshot["yaw_err"]
                 batt_voltage = telemetry_snapshot["batt_voltage"]
@@ -467,8 +465,9 @@ def main():
                 batt_flag = " LOW!" if batt_voltage <= LOW_BATTERY_THRESHOLD_V else ""
                 telemetry_line = (
                     f"[TELEMETRY] Motors: {actual_motors} || "
-                    f"Vision: CX:{cx:3d} CY:{cy:3d} W:{w:3d} H:{h:3d} Yaw:{yaw_err:+5.1f}deg || "
+                    f"Vision: CX:{cx:3d} CY:{cy:3d} W:{w:3d} H:{h:3d} Px:{pixels:5d} || "
                     f"IMU: AX:{ax:5.1f} AY:{ay:5.1f} AZ:{az:5.1f} TZ:{tz:5.1f} || "
+                    f"Error:  Yaw:{yaw_err:+5.1f}deg || "
                     f"Batt: {batt_voltage:4.2f}V {batt_flag} || "
                     f"State: {STATE_NAMES.get(state, f'UNKNOWN({state})'):<9}"
                 )

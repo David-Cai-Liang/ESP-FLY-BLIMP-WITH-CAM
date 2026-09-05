@@ -15,8 +15,8 @@
 #include <esp_now.h>
 #include <WiFi.h>
 #include <esp_wifi.h>
-#include "BatteryMonitor.h"
-#include "StateMachine.h"
+#include <BatteryMonitor.h>
+#include <StateMachine.h>
 
 // Corrected Motor GPIO Pin Mapping from ESP-FLY Wiring Diagram
 const int MOTOR_M1_FR = 7; // Front Right (M1) -> Pin 7 (Purple Wire)
@@ -25,7 +25,7 @@ const int MOTOR_M3_RL = 3; // Rear Left   (M3) -> Pin 3 (Blue Wire)
 const int MOTOR_M4_FL = 1; // Front Left  (M4) -> Pin 1 (Orange Wire)
 
 // === Control Mode (runtime select, driven by the base station) =============
-#define MODE_MANUAL       0
+#define MODE_MANUAL     0
 #define MODE_AUTONOMOUS 1
 volatile uint8_t currentMode = MODE_MANUAL;
 
@@ -61,7 +61,7 @@ uint8_t baseStationAddress[] = {0x30, 0x30, 0xF9, 0x17, 0xFB, 0x8C};
 
 // Telemetry sent from Blimp to Base Station
 typedef struct __attribute__((packed)) {
-  VisionData vision; // cx, cy, w, h (4 x uint16_t)
+  VisionData vision; // cx, cy, w, h, pixels (4 x uint16_t, 1 x uin32_t)
   IMUData imu;       // ax, ay, az, tz (4 x float)
   MotorData motors;  // actual, post-constrain M1-M4 outputs (4 x int16_t)
   float yawError;    // degrees of yaw needed to center the target (+ => target is right of center)
@@ -177,8 +177,8 @@ void loop() {
     lastBattReadMs = millis();
     battMonitor.update();
   }
-
-  float yawError = ((float)vData.cx - (MAX_W / 2.0f)) * HORIZONTAL_DEG_PER_PIXEL;
+yaw
+  float Error = ((float)vData.cx - (MAX_W / 2.0f)) * HORIZONTAL_DEG_PER_PIXEL;
   float pitchError = ((float)vData.cy - (MAX_H / 2.0f)) * VERTICAL_DEG_PER_PIXEL;
 
   bool stale = (millis() - lastRecvTime > CONTROL_TIMEOUT_MS);
@@ -204,6 +204,11 @@ void loop() {
       m4 = out.m4;
       currentState = stateMachine.currentState();
     }
+  } 
+
+  // Override yawError with IMU yaw error when turning
+  if (currentState == STATE_TURNING) {
+    yawError = stateMachine.getTurnYawErrorDeg();
   }
 
   m1 = constrain(m1, 0, MOTOR_MAX);

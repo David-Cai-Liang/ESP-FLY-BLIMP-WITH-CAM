@@ -26,10 +26,10 @@ MotorData StateMachine::update(const VisionData &vData, const IMUData &iData, fl
     float rate = iData.tz - GYRO_BIAS_RAD_PER_SEC;
     turnedSoFar_ += rate * (dtMs / 1000.0f);
 
-    float error = wrapPI(WAYPOINT_LIST[waypointIndex_] - turnedSoFar_);
-    int correction = (int)((fabs(error) - TURN_DEADBAND_RAD) * TURN_KP);
+    float yawError = wrapPI(WAYPOINT_LIST[waypointIndex_] - turnedSoFar_);
+    int correction = (int)((fabs(yawError) - TURN_DEADBAND_RAD) * TURN_KP);
 
-    if (error >= 0) {
+    if (yawError >= 0) {
       out.m1 += correction;
     } else {
       out.m4 += correction;
@@ -37,7 +37,7 @@ MotorData StateMachine::update(const VisionData &vData, const IMUData &iData, fl
     out.m1 -= TURN_KD * iData.tz;
     out.m4 += TURN_KD * iData.tz;
 
-    if (fabs(error) <= TURN_DEADBAND_RAD && fabs(iData.tz) <= TURN_RATE_SETTLE) {
+    if (fabs(yawError) <= TURN_DEADBAND_RAD && fabs(iData.tz) <= TURN_RATE_SETTLE) {
       turnInProgress_ = false;
       waypointIndex_ = (waypointIndex_ + 1) % WAYPOINT_COUNT;
     }
@@ -108,4 +108,8 @@ MotorData StateMachine::update(const VisionData &vData, const IMUData &iData, fl
   }
 
   return out;
+}
+
+float StateMachine::getTurnYawErrorDeg() const {
+  return wrapPI(WAYPOINT_LIST[waypointIndex_] - turnedSoFar_) * (180.0f / (float)PI);
 }
