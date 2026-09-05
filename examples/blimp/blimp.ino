@@ -177,8 +177,8 @@ void loop() {
     lastBattReadMs = millis();
     battMonitor.update();
   }
-yaw
-  float Error = ((float)vData.cx - (MAX_W / 2.0f)) * HORIZONTAL_DEG_PER_PIXEL;
+
+  float yawError = ((float)vData.cx - (MAX_W / 2.0f)) * HORIZONTAL_DEG_PER_PIXEL;
   float pitchError = ((float)vData.cy - (MAX_H / 2.0f)) * VERTICAL_DEG_PER_PIXEL;
 
   bool stale = (millis() - lastRecvTime > CONTROL_TIMEOUT_MS);
