@@ -37,12 +37,12 @@ struct LabThreshold {
 };
 
 struct Rect {
-  int x, y, w, h;
+  uint16_t x, y, w, h;
 };
 
 struct Blob {
-  int x, y, w, h;
-  int cx, cy;
+  uint16_t x, y, w, h;
+  uint16_t cx, cy;
   uint32_t pixels;
 };
 
