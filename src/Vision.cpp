@@ -141,11 +141,11 @@ IRAM_ATTR Blob Vision::findLargestBlob(camera_fb_t *fb, Rect roi, uint32_t area_
 
   Blob best = {0, 0, 0, 0, 0, 0, 0};
 
-  for (int ry = 0; ry < rh; ry += SCAN_STEP) {
+  for (int ry = 0; ry < rh; ry++) {
     int img_y = roi.y + ry;
     int row_idx = img_y * stride;
 
-    for (int rx = 0; rx < rw; rx += SCAN_STEP) {
+    for (int rx = 0; rx < rw; rx++) {
       int img_x = roi.x + rx;
       int idx = row_idx + img_x;
 

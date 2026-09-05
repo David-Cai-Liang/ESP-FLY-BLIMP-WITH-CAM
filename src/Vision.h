@@ -94,7 +94,6 @@ private:
   static constexpr uint32_t AREA_THRESHOLD_LOCKED = 50;
   static constexpr uint32_t AREA_THRESHOLD_SEARCH = 100;
   static constexpr int ROI_PADDING = 30;
-  static constexpr int SCAN_STEP = 1;
 };
 
 #endif // VISION_H

@@ -50,7 +50,6 @@ static const LabThreshold THRESHOLD_BLIMP = {20, 60, 10, 50, 1, 30};
 static const uint32_t AREA_THRESHOLD_LOCKED = 30;
 static const uint32_t AREA_THRESHOLD_SEARCH = 60;
 static const int ROI_PADDING = 30;
-static const int SCAN_STEP = 1;
 
 struct Rect {uint16_t x, y, w, h; };
 struct Blob {uint16_t x, y, w, h, cx, cy; uint32_t pixels; };
@@ -70,7 +69,6 @@ typedef struct {
 
 static Rect tracking_roi = {0, 0, MAX_W, MAX_H};
 static bool target_locked = false;
-static uint16_t heartbeat = 1;
 
 static uint8_t threshold_lut[8192];
 static uint8_t *mask_buf = NULL;     // Internal SRAM (76.8 KB)
@@ -209,11 +207,11 @@ IRAM_ATTR Blob findLargestBlob(camera_fb_t *fb, Rect roi, uint32_t area_threshol
 
   Blob best = {0, 0, 0, 0, 0, 0, 0};
 
-  for (int ry = 0; ry < rh; ry += SCAN_STEP) {
+  for (int ry = 0; ry < rh; ry++) {
     int img_y = roi.y + ry;
     int row_idx = img_y * stride;
 
-    for (int rx = 0; rx < rw; rx += SCAN_STEP) {
+    for (int rx = 0; rx < rw; rx ++) {
       int img_x = roi.x + rx;
       int idx = row_idx + img_x;
 
@@ -481,7 +479,7 @@ void streamDebug(camera_fb_t *work_fb, const Blob &blob, const Rect &roi, bool l
 }
 
 #else
-void sendTelemetry(const TelemetryData &telem) {
+void sendTelemetry(const Blob &blob) {
   DataHeader header;
   header.payload_len = 0;
   header.blob = blob;
@@ -525,7 +523,7 @@ void loop() {
 #if DEBUG_STREAM
   streamDebug(&result.work_fb, result.blob, tracking_roi, target_locked);
 #else
-  sendTelemetry(blob);
+  sendTelemetry(result.blob);
 #endif
 
   esp_camera_fb_return(result.camera_fb);

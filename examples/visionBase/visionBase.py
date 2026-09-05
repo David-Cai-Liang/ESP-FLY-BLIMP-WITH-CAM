@@ -10,7 +10,7 @@ SERIAL_PORT = 'COM35'
 BAUD_RATE = 115200
 
 MAGIC_HEADER = b'\xff\xaa\x55\xff'
-HEADER_SIZE = 16  # 4 magic + 4 payload_len + 8 (6 x uint16, 1 x uint32)
+HEADER_SIZE = 24  # 4 magic + 4 payload_len + 8 (6 x uint16, 1 x uint32)
 
 def main():
     try:
@@ -41,7 +41,7 @@ def main():
                 break
 
             # Unpack binary frame header & telemetry array
-            unpacked = struct.unpack('<4sI11H', buffer[:HEADER_SIZE])
+            unpacked = struct.unpack('<4sI6HI', buffer[:HEADER_SIZE])
             payload_len = unpacked[1]
             blob_array = list(unpacked[2:]) # [x, y, cx, cy, w, h, pixels]
 
