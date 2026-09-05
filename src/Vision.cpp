@@ -354,6 +354,7 @@ VisionData Vision::buildVisionData(const Blob &largest) {
     vdata.cy = (uint16_t)largest.cy;
     vdata.w  = (uint16_t)roi_w;
     vdata.h  = (uint16_t)roi_h;
+    vdata.pixels = largest.pixels;
   } else {
     target_locked = false;
     tracking_roi = {0, 0, MAX_W, MAX_H};
@@ -362,6 +363,7 @@ VisionData Vision::buildVisionData(const Blob &largest) {
     vdata.cy = 0;
     vdata.w  = 0;
     vdata.h  = 0;
+    vdata.pixels = 0;
   }
   return vdata;
 }

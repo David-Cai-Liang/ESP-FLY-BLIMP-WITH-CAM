@@ -25,7 +25,7 @@ namespace StateMachineConfig {
   // Camera-derived tracking parameters, in degrees
   const float YAW_DEADZONE_HALF_DEG = 2;
   const float YAW_GAIN_PER_DEG = 10;                    // motor power per degree of error
-  const int TURNING_AREA = 29500;                       // vision blob area that triggers a waypoint turn
+  const uint32_t TURNING_AREA = 15000;                  // masked pixel count that triggers a waypoint turn
 
   // IMU-derived turning parameters, in radians
   const float TURN_KD = 5;

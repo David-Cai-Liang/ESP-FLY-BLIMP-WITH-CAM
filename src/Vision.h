@@ -48,6 +48,9 @@ struct Blob {
 
 typedef struct __attribute__((packed)) {
   uint16_t cx, cy, w, h;  // Bounding box / ROI tracking parameters
+  uint32_t pixels;        // Masked pixel count for the detected blob (0 if
+                           // no blob met the area threshold). uint32_t since
+                           // MAX_W * MAX_H (76800) exceeds uint16_t range.
 } VisionData;
 
 typedef struct {
