@@ -63,12 +63,6 @@ A vision-tracking, IMU-stabilized blimp controlled wirelessly from a keyboard, b
 Two fixed-size `packed` structs are exchanged over ESP-NOW:
 
 ```cpp
-// Vision Data returned from camera processing
-typedef struct __attribute__((packed)) {
-  uint16_t cx, cy, w, h;  // Blob centroid (cx, cy) and ROI bounding dimensions (w, h)
-  uint32_t pixels;        // Total count of masked pixels in the detected blob
-} VisionData;
-
 // Blimp -> Base station
 typedef struct __attribute__((packed)) {
   VisionData vision; // cx, cy, w, h, pixels
@@ -102,15 +96,15 @@ Control (PC -> Base Station):
 
 Control mode is selectable live via the `mode` byte inside `ControlPacket`. Pressing `M` in `base_station.py` flips modes at runtime:
 
-- `MODE_MANUAL` (`0`): Motor outputs are driven by the base station commands with IMU gyro-Z yaw damping (`STRAIGHT_KD * iData.tz`) on M1 and M4.
+- `MODE_MANUAL` (`0`): Motor outputs are driven by the base station commands with IMU gyro-Z yaw damping (`STRAIGHT_KD * iData.tz`) on M1 and M4. `YawError` is camera based.
 - `MODE_AUTONOMOUS` (`1`): Handled by the standalone `StateMachine` class (`StateMachine.h` / `StateMachine.cpp`). Manual stick inputs are bypassed while the state machine calculates motor commands based on vision tracking data and IMU telemetry.
 
 ### Autonomous State Machine Sub-States
 
-1. **`STATE_TRACKING`**: Active when a target blob is detected (`w > 0 && h > 0`) and total blob size has not reached the turn threshold (`pixels <= TURNING_AREA`).
+1. **`STATE_TRACKING`**: Active when a target blob is detected (`w > 0 && h > 0`) and total blob size has not reached the turn threshold (`pixels <= TURNING_AREA`). `YawError` is camera based.
    - **Yaw Controller**: Calculates horizontal error (`yawError`) in degrees. If `|yawError| > YAW_DEADZONE_HALF_DEG` (2°), proportional thrust correction (`YAW_GAIN_PER_DEG = 10`) is applied across forward motors M1 and M4, combined with gyro rate damping (`TURN_KD = 5`).
    - **Pitch Controller**: Calculates vertical error (`pitchError`) in degrees using vertical FOV parameters (`VERTICAL_FOV_DEG = 44.6`). If `|pitchError| > PITCH_DEADZONE_HALF_DEG` (2°), proportional thrust correction (`PITCH_GAIN_PER_DEG = 2`) adjusts vertical thrust across M2 and M3 relative to `DEFAULT_UPWARD_POWER`.
-2. **`STATE_TURNING`**: Triggered when `vData.pixels > TURNING_AREA` (15,000 pixels), indicating the blimp is close enough to a waypoint target. The blimp halts tracking and executes a closed-loop rotation sequence defined in `WAYPOINT_LIST` using IMU gyro yaw integration before advancing to the next waypoint.
+2. **`STATE_TURNING`**: Triggered when `vData.pixels > TURNING_AREA` (15,000 pixels), indicating the blimp is close enough to a waypoint target. The blimp halts tracking and executes a closed-loop rotation sequence defined in `WAYPOINT_LIST` using IMU gyro yaw integration before advancing to the next waypoint. `YawError` is IMU based.
 3. **`STATE_SEARCHING`**: Active when no visual target is visible. Maintains default forward and upward baseline thrust levels while attempting to acquire a target.
 
 ## Setup & Calibration

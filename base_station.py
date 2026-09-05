@@ -467,7 +467,7 @@ def main():
                     f"[TELEMETRY] Motors: {actual_motors} || "
                     f"Vision: CX:{cx:3d} CY:{cy:3d} W:{w:3d} H:{h:3d} Px:{pixels:5d} || "
                     f"IMU: AX:{ax:5.1f} AY:{ay:5.1f} AZ:{az:5.1f} TZ:{tz:5.1f} || "
-                    f"Error:  Yaw:{yaw_err:+5.1f}deg || "
+                    f"Yaw Error:{yaw_err:+5.1f}deg || "
                     f"Batt: {batt_voltage:4.2f}V {batt_flag} || "
                     f"State: {STATE_NAMES.get(state, f'UNKNOWN({state})'):<9}"
                 )
