@@ -15,7 +15,7 @@
 uint8_t blimpAddress[] = {0x68, 0xee, 0x8f, 0x50, 0x28, 0x94};
 
 typedef struct __attribute__((packed)) {
-  int16_t motors[4];
+  int16_t m1, m2, m3, m4;
   uint8_t mode; // MODE_MANUAL / MODE_PROPORTIONAL, opaque to the base station — just relayed
 } ControlPacket;
 

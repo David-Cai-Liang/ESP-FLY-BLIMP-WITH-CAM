@@ -1,4 +1,4 @@
-#include "motor.h"
+#include "Motor.h"
 
 MotorData buildMotorData(int16_t m1, int16_t m2, int16_t m3, int16_t m4) {
   MotorData data;

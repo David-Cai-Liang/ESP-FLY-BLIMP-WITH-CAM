@@ -9,13 +9,13 @@
 // This lets anything downstream on the PC side (e.g. an autonomous
 // controller, a logger, base_station.py's live readout) see what the motors
 // are *actually* doing right now, as opposed to what was last commanded —
-// useful since MODE_PROPORTIONAL and the watchdog can both override or zero
+// useful since MODE_AUTONOMOUS and the watchdog can both override or zero
 // the commanded values before they ever reach analogWrite().
 typedef struct __attribute__((packed)) {
-  int16_t m1; // Front Right
-  int16_t m2; // Rear Right
-  int16_t m3; // Rear Left
-  int16_t m4; // Front Left
+  int16_t m1 = 0; // Front Right
+  int16_t m2 = 0; // Rear Right
+  int16_t m3 = 0; // Rear Left
+  int16_t m4 = 0; // Front Left
 } MotorData;
 
 // Small convenience constructor, mirroring Vision.cpp's buildVisionData().
