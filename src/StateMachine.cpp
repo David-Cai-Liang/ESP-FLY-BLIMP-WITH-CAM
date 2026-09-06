@@ -9,6 +9,22 @@ static float wrapPI(float angleRad) {
   return angleRad;
 }
 
+
+// Applies `correction` to `primary`. If that would push `primary` past
+// TURN_MAX_POWER (mirrors MOTOR_MAX in blimp.ino), `primary` is clamped and
+// the leftover ("overflow") correction is bled into `secondary` (decreasing
+// it) instead of being discarded. This keeps the differential response
+// roughly linear over a wider range before it fully saturates, rather than
+// flattening out the instant one motor hits its cap.
+static void applyDifferentialCorrection(int &primary, int &secondary, int correction) {
+  primary += correction;
+  if (primary > TURN_MAX_POWER) {
+    int overflow = primary - (int)TURN_MAX_POWER;
+    primary = (int)TURN_MAX_POWER;
+    secondary -= overflow;
+  }
+}
+
 MotorData StateMachine::update(const VisionData &vData, const IMUData &iData, float yawError, float pitchError) {
   MotorData out;
   out.m1 = out.m4 = DEFAULT_FORWARD_POWER;
@@ -30,9 +46,9 @@ MotorData StateMachine::update(const VisionData &vData, const IMUData &iData, fl
     int correction = (int)((fabs(yawError) - TURN_DEADBAND_RAD) * TURN_KP);
 
     if (yawError >= 0) {
-      out.m1 += correction;
+      applyDifferentialCorrection(out.m1, out.m4, correction);
     } else {
-      out.m4 += correction;
+      applyDifferentialCorrection(out.m4, out.m1, correction);
     }
     out.m1 -= TURN_KD * iData.tz;
     out.m4 += TURN_KD * iData.tz;
@@ -54,9 +70,9 @@ MotorData StateMachine::update(const VisionData &vData, const IMUData &iData, fl
       if (fabs(yawError) > YAW_DEADZONE_HALF_DEG) {
         int correction = (int)((fabs(yawError) - YAW_DEADZONE_HALF_DEG) * YAW_GAIN_PER_DEG);
         if (yawError > 0) {
-          out.m4 += correction;
+          applyDifferentialCorrection(out.m4, out.m1, correction);
         } else {
-          out.m1 += correction;
+          applyDifferentialCorrection(out.m1, out.m4, correction);
         }
       }
 
