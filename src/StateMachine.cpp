@@ -9,6 +9,21 @@ static float wrapPI(float angleRad) {
   return angleRad;
 }
 
+// Applies `correction` to `primary`. If that would push `primary` past
+// TURN_MAX_POWER (mirrors MOTOR_MAX in blimp.ino), `primary` is clamped and
+// the leftover ("overflow") correction is bled into `secondary` (decreasing
+// it) instead of being discarded. This keeps the differential response
+// roughly linear over a wider range before it fully saturates, rather than
+// flattening out the instant one motor hits its cap.
+//
+// Takes/returns plain values (not references) because MotorData's fields
+// live in a packed struct — you can't bind a non-const reference directly
+// to a packed field.
+struct DifferentialCorrection {
+  int primary;
+  int secondary;
+};
+
 static DifferentialCorrection applyDifferentialCorrection(int primary, int secondary, int correction) {
  primary += correction;
  if (primary > TURN_MAX_POWER) {
