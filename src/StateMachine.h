@@ -29,8 +29,7 @@ namespace StateMachineConfig {
   const float YAW_GAIN_PER_DEG = 10;                    // motor power per degree of error
   const float PITCH_DEADZONE_HALF_DEG = 1;
   const float PITCH_GAIN_PER_DEG = 5;
-  const uint32_t TURNING_AREA = 10000;                  // masked pixel count that triggers a waypoint turn
-
+  const uint32_t TURNING_AREA = 29500;                  // bounding box size to trigger a waypoint turn, more reliable compared to raw masked pixel count
   // IMU-derived turning parameters, in radians
   const float TURN_KD = 5;
   const float TURN_KP = 150;

@@ -74,7 +74,7 @@ MotorData StateMachine::update(const VisionData &vData, const IMUData &iData, fl
 
   } else {
     bool targetVisible = (vData.w > 0 && vData.h > 0);
-    bool closeEnough = (vData.pixels > TURNING_AREA);
+    bool closeEnough = (vData.w * vData.h > TURNING_AREA);
 
     if (!closeEnough && targetVisible) {
       state_ = STATE_TRACKING;
