@@ -21,7 +21,7 @@
 namespace StateMachineConfig {
 
   // Base thrust while in proportional/autonomous mode
-  const int DEFAULT_FORWARD_POWER = 50;
+  const int DEFAULT_FORWARD_POWER = 40;
   const int DEFAULT_UPWARD_POWER = 20;
 
   // Camera-derived tracking parameters, in degrees
@@ -30,6 +30,7 @@ namespace StateMachineConfig {
   const float PITCH_DEADZONE_HALF_DEG = 1;
   const float PITCH_GAIN_PER_DEG = 5;
   const uint32_t TURNING_AREA = 29500;                  // bounding box size to trigger a waypoint turn, more reliable compared to raw masked pixel count
+  const int CLOSE_ENOUGH_FRAME_CONFIRM = 5;             // consecutive frames above TURNING_AREA required before a turn is actually initiated (debounces a single noisy/oversized detection)
   // IMU-derived turning parameters, in radians
   const float TURN_KD = 5;
   const float TURN_KP = 150;
@@ -81,6 +82,7 @@ private:
   float turnedSoFar_ = 0;
   bool turnInProgress_ = false;
   unsigned long lastTurnStepMs_ = 0;
+  int closeEnoughFrameCount_ = 0;  // consecutive frames seen with w*h > TURNING_AREA
 
   // Wiggle-search state (persists across update() calls; currently unused)
   bool wiggleSearchActive_ = false;

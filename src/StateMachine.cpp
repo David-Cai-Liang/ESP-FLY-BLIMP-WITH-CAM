@@ -76,7 +76,14 @@ MotorData StateMachine::update(const VisionData &vData, const IMUData &iData, fl
     bool targetVisible = (vData.w > 0 && vData.h > 0);
     bool closeEnough = (vData.w * vData.h > TURNING_AREA);
 
-    if (!closeEnough && targetVisible) {
+    // Require CLOSE_ENOUGH_FRAME_CONFIRM consecutive close-enough frames
+    // before actually committing to a turn, so a single oversized/noisy
+    // detection can't trigger one. Any frame that drops back below
+    // TURNING_AREA resets the streak.
+    closeEnoughFrameCount_ = closeEnough ? (closeEnoughFrameCount_ + 1) : 0;
+    bool turnConfirmed = closeEnough && (closeEnoughFrameCount_ >= CLOSE_ENOUGH_FRAME_CONFIRM);
+
+    if (!turnConfirmed && targetVisible) {
       state_ = STATE_TRACKING;
       wiggleSearchActive_ = false;
 
@@ -106,12 +113,13 @@ MotorData StateMachine::update(const VisionData &vData, const IMUData &iData, fl
         out.m3 = max(0, -(DEFAULT_UPWARD_POWER + correction));
       }
 
-    } else if (closeEnough) {
+    } else if (turnConfirmed) {
       state_ = STATE_TURNING;
       wiggleSearchActive_ = false;
       turnInProgress_ = true;
       turnedSoFar_ = 0;
       lastTurnStepMs_ = millis();
+      closeEnoughFrameCount_ = 0;
     }
     // else {
     //   state_ = STATE_SEARCHING;
