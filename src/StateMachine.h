@@ -32,7 +32,8 @@ namespace StateMachineConfig {
   const uint32_t TURNING_AREA = 29500;                  // bounding box size to trigger a waypoint turn, more reliable compared to raw masked pixel count
   const int CLOSE_ENOUGH_FRAME_CONFIRM = 5;             // consecutive frames above TURNING_AREA required before a turn is actually initiated (debounces a single noisy/oversized detection)
   // IMU-derived turning parameters, in radians
-  const float TURN_KD = 5;
+  const float STRAIGHT_KD = 5;
+  const float TURN_KD = 2;
   const float TURN_KP = 150;
   const float TURN_RATE_SETTLE = PI / 10;
   const float TURN_DEADBAND_RAD = PI / 10;

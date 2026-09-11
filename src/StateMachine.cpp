@@ -56,13 +56,13 @@ MotorData StateMachine::update(const VisionData &vData, const IMUData &iData, fl
     int correction = (int)((fabs(yawError) - TURN_DEADBAND_RAD) * TURN_KP);
 
     if (yawError >= 0) {
-      DifferentialCorrection r = applyDifferentialCorrection(out.m1, out.m4, correction);
-      out.m1 = r.primary;
-      out.m4 = r.secondary;
-    } else {
       DifferentialCorrection r = applyDifferentialCorrection(out.m4, out.m1, correction);
       out.m4 = r.primary;
       out.m1 = r.secondary;
+    } else {
+      DifferentialCorrection r = applyDifferentialCorrection(out.m1, out.m4, correction);
+      out.m1 = r.primary;
+      out.m4 = r.secondary;
     }
     out.m1 -= TURN_KD * iData.tz;
     out.m4 += TURN_KD * iData.tz;
@@ -102,8 +102,8 @@ MotorData StateMachine::update(const VisionData &vData, const IMUData &iData, fl
       }
 
       // Gyro-rate correction always applied while tracking
-      out.m1 -= TURN_KD * iData.tz;
-      out.m4 += TURN_KD * iData.tz;
+      out.m1 -= STRAIGHT_KD * iData.tz;
+      out.m4 += STRAIGHT_KD * iData.tz;
 
 
       // Pitch Control
