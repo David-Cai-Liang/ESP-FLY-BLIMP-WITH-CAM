@@ -52,7 +52,7 @@ A vision-tracking, IMU-stabilized blimp controlled wirelessly from a keyboard, b
 - Battery voltage sensing: resistive divider from `Vbat` to GPIO 2. Polled every `BATTERY_READ_INTERVAL_MS` (500 ms) and attached to `TelemetryPacket` as `battVoltage`.
 - Balloon: 24-36 inch 2-sheet Foil Balloon.
 - Frame: PLA printed structure.
-- Current CAD Model: https://cad.onshape.com/documents/6abb47ea8df48ed88ff41eff/w/fc873cead17ca65b0af647cb/e/1d23eafa7f8f630fb687ec6b
+- Current CAD Model: https://cad.onshape.com/documents/6abb47ea8df48ed88ff41eff/w/e55858d9c5f248cb883d609c/e/1d23eafa7f8f630fb687ec6b
 
 **Base station ESP32**
 - ESP32-S3 board connected via USB serial to PC.
