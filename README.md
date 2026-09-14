@@ -104,7 +104,7 @@ Control mode is selectable live via the `mode` byte inside `ControlPacket`. Pres
 1. **`STATE_TRACKING`**: Active when a target blob is detected (`w > 0 && h > 0`) and total blob size has not reached the turn threshold (`pixels <= TURNING_AREA`). `YawError` is camera based.
    - **Yaw Controller**: Calculates horizontal error (`yawError`) in degrees. If `|yawError| > YAW_DEADZONE_HALF_DEG` (1°), proportional thrust correction (`YAW_GAIN_PER_DEG = 10`) is applied across forward motors M1 and M4, combined with gyro rate damping (`TURN_KD = 5`).
    - **Pitch Controller**: Calculates vertical error (`pitchError`) in degrees using vertical FOV parameters (`VERTICAL_FOV_DEG = 44.6`). If `|pitchError| > PITCH_DEADZONE_HALF_DEG` (1°), proportional thrust correction (`PITCH_GAIN_PER_DEG = 5`) adjusts vertical thrust across M2 and M3 relative to `DEFAULT_UPWARD_POWER`.
-2. **`STATE_TURNING`**: Triggered when `vData.pixels > TURNING_AREA` (2,950 pixels), indicating the blimp is close enough to a waypoint target. The blimp halts tracking and executes a closed-loop rotation sequence defined in `WAYPOINT_LIST` using IMU gyro yaw integration before advancing to the next waypoint. `YawError` is IMU based.
+2. **`STATE_TURNING`**: Triggered when `vData.pixels > TURNING_AREA` (29,500 pixels), indicating the blimp is close enough to a waypoint target. The blimp halts tracking and executes a closed-loop rotation sequence defined in `WAYPOINT_LIST` using IMU gyro yaw integration before advancing to the next waypoint. `YawError` is IMU based.
 3. **`STATE_SEARCHING`**: Active when no visual target is visible. Maintains default forward and upward baseline thrust levels while attempting to acquire a target.
 
 ## Setup & Calibration
