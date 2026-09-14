@@ -42,10 +42,10 @@ A vision-tracking, IMU-stabilized blimp controlled wirelessly from a keyboard, b
 
 | Motor | Function | GPIO | Propeller |
 |---|---|---|---|
-| M1 | Front Right | 7 | CCW |
-| M2 | Rear Right | 4 | CCW |
-| M3 | Rear Left | 3 | CW |
-| M4 | Front Left | 1 | CW |
+| M1 | Front Left | 7 | CCW |
+| M2 | Rear Left/Top | 4 | CCW |
+| M3 | Rear Right/Bottom | 3 | CW |
+| M4 | Front Right | 1 | CW |
 
 - Camera: OV-series module wired per `Vision.h` pin map (XCLK=10, PCLK=13, VSYNC=38, HREF=47, SIOD=40, SIOC=39, D0–D7 as defined), status LED on GPIO 21.
 - IMU: MPU6050 on I²C, SDA=5, SCL=6, address `0x68`.
@@ -102,9 +102,9 @@ Control mode is selectable live via the `mode` byte inside `ControlPacket`. Pres
 ### Autonomous State Machine Sub-States
 
 1. **`STATE_TRACKING`**: Active when a target blob is detected (`w > 0 && h > 0`) and total blob size has not reached the turn threshold (`pixels <= TURNING_AREA`). `YawError` is camera based.
-   - **Yaw Controller**: Calculates horizontal error (`yawError`) in degrees. If `|yawError| > YAW_DEADZONE_HALF_DEG` (2°), proportional thrust correction (`YAW_GAIN_PER_DEG = 10`) is applied across forward motors M1 and M4, combined with gyro rate damping (`TURN_KD = 5`).
-   - **Pitch Controller**: Calculates vertical error (`pitchError`) in degrees using vertical FOV parameters (`VERTICAL_FOV_DEG = 44.6`). If `|pitchError| > PITCH_DEADZONE_HALF_DEG` (2°), proportional thrust correction (`PITCH_GAIN_PER_DEG = 2`) adjusts vertical thrust across M2 and M3 relative to `DEFAULT_UPWARD_POWER`.
-2. **`STATE_TURNING`**: Triggered when `vData.pixels > TURNING_AREA` (15,000 pixels), indicating the blimp is close enough to a waypoint target. The blimp halts tracking and executes a closed-loop rotation sequence defined in `WAYPOINT_LIST` using IMU gyro yaw integration before advancing to the next waypoint. `YawError` is IMU based.
+   - **Yaw Controller**: Calculates horizontal error (`yawError`) in degrees. If `|yawError| > YAW_DEADZONE_HALF_DEG` (1°), proportional thrust correction (`YAW_GAIN_PER_DEG = 10`) is applied across forward motors M1 and M4, combined with gyro rate damping (`TURN_KD = 5`).
+   - **Pitch Controller**: Calculates vertical error (`pitchError`) in degrees using vertical FOV parameters (`VERTICAL_FOV_DEG = 44.6`). If `|pitchError| > PITCH_DEADZONE_HALF_DEG` (1°), proportional thrust correction (`PITCH_GAIN_PER_DEG = 5`) adjusts vertical thrust across M2 and M3 relative to `DEFAULT_UPWARD_POWER`.
+2. **`STATE_TURNING`**: Triggered when `vData.pixels > TURNING_AREA` (2,950 pixels), indicating the blimp is close enough to a waypoint target. The blimp halts tracking and executes a closed-loop rotation sequence defined in `WAYPOINT_LIST` using IMU gyro yaw integration before advancing to the next waypoint. `YawError` is IMU based.
 3. **`STATE_SEARCHING`**: Active when no visual target is visible. Maintains default forward and upward baseline thrust levels while attempting to acquire a target.
 
 ## Setup & Calibration
