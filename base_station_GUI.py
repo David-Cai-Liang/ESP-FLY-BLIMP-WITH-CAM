@@ -65,7 +65,7 @@ def draw_controls_strip(surface, rect, joystick, font, font_small):
     x = rect.x + 14
     y = rect.y + rect.height // 2
 
-    bd.draw_text(surface, "KEYS", (x, rect.y + 6), font_small, bd.TEXT_DIM)
+    bd.draw_text(surface, "KEYS", (x, rect.y + 2), font_small, bd.TEXT_DIM)
     key_w = 30
     for i, k in enumerate(DISPLAY_KEYS):
         kx = x + i * (key_w + 6)
