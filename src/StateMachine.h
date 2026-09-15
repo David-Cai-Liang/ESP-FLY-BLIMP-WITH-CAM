@@ -34,7 +34,7 @@ namespace StateMachineConfig {
   // IMU-derived turning parameters, in radians
   const float STRAIGHT_KD = 5;
   const float TURN_KD = 5;
-  const float TURN_KP = 150;
+  const float TURN_KP = 180;
   const float TURN_RATE_SETTLE = PI / 10;
   const float TURN_DEADBAND_RAD = PI / 10;
   const float TURN_MAX_POWER = 255;                     // mirrors MOTOR_MAX in blimp.ino
