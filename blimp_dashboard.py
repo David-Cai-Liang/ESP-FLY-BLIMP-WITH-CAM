@@ -393,22 +393,22 @@ def draw_imu_panel(surface, rect, frame, font, font_small):
     pygame.draw.line(surface, TEXT, (cx - 18, cy), (cx + 18, cy), 2)
     pygame.draw.line(surface, TEXT, (cx, cy - 6), (cx, cy + 6), 2)
 
-    # yaw rate (tz, deg/s) as a small needle dial below
+    # yaw torque (tz, rad) as a small needle dial below
     dial_cy = cy + radius + 34
     dial_r = 22
     pygame.draw.circle(surface, (17, 20, 26), (cx, dial_cy), dial_r)
     pygame.draw.circle(surface, PANEL_BORDER, (cx, dial_cy), dial_r, width=1)
-    tz_clamped = max(-180, min(180, frame.tz))
-    ang = math.radians(tz_clamped) - math.pi / 2
+    tz_clamped = max(-math.pi, min(math.pi, frame.tz))
+    ang = tz_clamped - math.pi / 2
     nx = cx + math.cos(ang) * dial_r * 0.85
     ny = dial_cy + math.sin(ang) * dial_r * 0.85
     pygame.draw.line(surface, YELLOW, (cx, dial_cy), (nx, ny), 3)
-    draw_text(surface, "yaw rate", (cx, dial_cy + dial_r + 4), font_small, TEXT_DIM, align="center")
+    draw_text(surface, "yaw torque", (cx, dial_cy + dial_r + 4), font_small, TEXT_DIM, align="center")
 
     draw_text(surface, f"AX {frame.ax:+.1f}", (rect.x, rect.bottom - 44), font_small, TEXT)
     draw_text(surface, f"AY {frame.ay:+.1f}", (rect.x, rect.bottom - 30), font_small, TEXT)
     draw_text(surface, f"AZ {frame.az:+.1f}", (rect.x, rect.bottom - 16), font_small, TEXT)
-    draw_text(surface, f"TZ {frame.tz:+.1f}\u00b0/s", (rect.right, rect.bottom - 16), font_small, TEXT, align="right")
+    draw_text(surface, f"TZ {frame.tz:+.2f} rad", (rect.right, rect.bottom - 16), font_small, TEXT, align="right")
 
 
 CAM_W, CAM_H = 320, 240  # assumed sensor working resolution for scaling the blob box
