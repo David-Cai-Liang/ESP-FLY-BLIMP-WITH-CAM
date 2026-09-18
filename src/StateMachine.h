@@ -21,22 +21,22 @@
 namespace StateMachineConfig {
 
   // Base thrust while in proportional/autonomous mode
-  const int DEFAULT_FORWARD_POWER = 40;
+  const int DEFAULT_FORWARD_POWER = 10;
   const int DEFAULT_UPWARD_POWER = 20;
 
   // Camera-derived tracking parameters, in degrees
   const float YAW_DEADZONE_HALF_DEG = 1;
   const float YAW_GAIN_PER_DEG = 10;                    // motor power per degree of error
   const float PITCH_DEADZONE_HALF_DEG = 1;
-  const float PITCH_GAIN_PER_DEG = 5;
+  const float PITCH_GAIN_PER_DEG = 10;
   const uint32_t TURNING_AREA = 29500;                  // bounding box size to trigger a waypoint turn, more reliable compared to raw masked pixel count
   const int CLOSE_ENOUGH_FRAME_CONFIRM = 5;             // consecutive frames above TURNING_AREA required before a turn is actually initiated (debounces a single noisy/oversized detection)
   // IMU-derived turning parameters, in radians
   const float STRAIGHT_KD = 5;
   const float TURN_KD = 5;
   const float TURN_KP = 180;
-  const float TURN_RATE_SETTLE = PI / 10;
-  const float TURN_DEADBAND_RAD = PI / 10;
+  const float TURN_RATE_SETTLE = PI / 7;
+  const float TURN_DEADBAND_RAD = PI / 7;
   const float TURN_MAX_POWER = 255;                     // mirrors MOTOR_MAX in blimp.ino
   const float GYRO_BIAS_RAD_PER_SEC = 0;
 
