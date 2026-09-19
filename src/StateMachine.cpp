@@ -38,9 +38,11 @@ static DifferentialCorrection applyDifferentialCorrection(int primary, int secon
 MotorData StateMachine::update(const VisionData &vData, const IMUData &iData, float yawError, float pitchError) {
   MotorData out;
   out.m1 = out.m4 = DEFAULT_FORWARD_POWER;
-  out.m2 = curr_upward_power = DEFAULT_UPWARD_POWER;
   state_ = STATE_SEARCHING;
-  
+
+  //Maintain Altitude
+  out.m2 = max(0, currUpwardPower_);
+  out.m3 = max(0, -currUpwardPower_);
   if (turnInProgress_) {
     state_ = STATE_TURNING;
 
@@ -67,9 +69,6 @@ MotorData StateMachine::update(const VisionData &vData, const IMUData &iData, fl
     // Control Yaw Rate
     out.m1 -= TURN_KD * iData.tz;
     out.m4 += TURN_KD * iData.tz;
-    // Maintain Altitude
-    out.m2 = max(0, curr_upward_power);
-    out.m3 = max(0, -curr_upward_power);
 
     if (fabs(yawError) <= TURN_DEADBAND_RAD && fabs(iData.tz) <= TURN_RATE_SETTLE) {
       turnInProgress_ = false;
@@ -113,9 +112,7 @@ MotorData StateMachine::update(const VisionData &vData, const IMUData &iData, fl
       // Pitch Control
       if (fabs(pitchError) > PITCH_DEADZONE_HALF_DEG) {
         int correction = (int)((fabs(pitchError) - PITCH_DEADZONE_HALF_DEG) * PITCH_GAIN_PER_DEG);
-        curr_upward_power = DEFAULT_UPWARD_POWER + correction;
-        out.m2 = max(0, curr_upward_power);
-        out.m3 = max(0, -curr_upward_power);
+        currUpwardPower_ = DEFAULT_UPWARD_POWER + correction;
       }
 
     } else if (turnConfirmed) {
@@ -151,10 +148,6 @@ MotorData StateMachine::update(const VisionData &vData, const IMUData &iData, fl
     //   } else {
     //     out.m4 -= (-sweep);
     //   }
-    //
-    //  // Maintain Altitude
-    //  out.m2 = max(0, curr_upward_power);
-    //  out.m3 = max(0, -curr_upward_power);
     //
     // }
   }

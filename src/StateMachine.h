@@ -41,7 +41,9 @@ namespace StateMachineConfig {
   const float GYRO_BIAS_RAD_PER_SEC = 0;
 
   // Waypoint turn sequence (radians to turn at each successive waypoint)
-  const float WAYPOINT_LIST[] = {PI / 2, PI / 2, PI / 2, PI / 2};
+  // {95*PI/180, 95*PI/180, 95*PI/180, 95*PI/180}
+  // {125*PI/180, 125*PI/180, 125*PI/180, 125*PI/180}
+  const float WAYPOINT_LIST[] = {95*PI/180, 95*PI/180, 95*PI/180, 95*PI/180};
   const int WAYPOINT_COUNT = sizeof(WAYPOINT_LIST) / sizeof(WAYPOINT_LIST[0]);
 
   // Wiggle-search tuning (currently unused — see StateMachine.cpp)
@@ -82,6 +84,7 @@ private:
   int waypointIndex_ = 0;
   float turnedSoFar_ = 0;
   bool turnInProgress_ = false;
+  int currUpwardPower_ = DEFAULT_UPWARD_POWER;
   unsigned long lastTurnStepMs_ = 0;
   int closeEnoughFrameCount_ = 0;  // consecutive frames seen with w*h > TURNING_AREA
 
