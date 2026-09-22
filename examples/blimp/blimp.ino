@@ -171,7 +171,10 @@ void loop() {
   }
 #endif
 
+  // readData() serves the sampler's cache (no I2C here); yawState() carries the
+  // bias-corrected rate and the integrated heading.
   IMUData iData = imu.readData();
+  YawState yaw = imu.yawState();
 
   if (millis() - lastBattReadMs >= BATTERY_READ_INTERVAL_MS) {
     lastBattReadMs = millis();
@@ -188,16 +191,16 @@ void loop() {
 
   if (currentMode == MODE_MANUAL) {
     currentState = STATE_MANUAL;
-    m1 = stale ? 0 : incomingControl.motors[0] - STRAIGHT_KD * iData.tz;
+    m1 = stale ? 0 : incomingControl.motors[0] - STRAIGHT_KD * yaw.rateRad;
     m2 = stale ? 0 : incomingControl.motors[1];
     m3 = stale ? 0 : incomingControl.motors[2];
-    m4 = stale ? 0 : incomingControl.motors[3] + STRAIGHT_KD * iData.tz;
+    m4 = stale ? 0 : incomingControl.motors[3] + STRAIGHT_KD * yaw.rateRad;
 
   } else { // MODE_AUTONOMOUS
     currentState = STATE_SEARCHING;
 
     if (!stale) {
-      MotorData out = stateMachine.update(vData, iData, yawError, pitchError);
+      MotorData out = stateMachine.update(vData, yaw, yawError, pitchError);
       m1 = out.m1;
       m2 = out.m2;
       m3 = out.m3;
@@ -215,6 +218,10 @@ void loop() {
   m2 = constrain(m2, 0, MOTOR_MAX);
   m3 = constrain(m3, 0, MOTOR_MAX);
   m4 = constrain(m4, 0, MOTOR_MAX);
+
+  // Gate in-flight gyro bias re-trimming on the props actually being off —
+  // prop wash and vibration would otherwise poison the estimate.
+  imu.setMotorsIdle(m1 == 0 && m2 == 0 && m3 == 0 && m4 == 0);
 
   // 3. Transmit Telemetry Packet to Base Station
   sendTelemetry(vData, iData, m1, m2, m3, m4, yawError, currentState);

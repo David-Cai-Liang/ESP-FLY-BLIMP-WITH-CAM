@@ -10,7 +10,7 @@ import serial
 if sys.platform == "win32":
     os.system("")
 
-SERIAL_PORT = "COM9"  # Adjust for your OS ('/dev/ttyUSB0' or '/dev/ttyACM0')
+SERIAL_PORT = "/dev/cu.usbmodem101"  # Adjust for your OS ('/dev/ttyUSB0' or '/dev/ttyACM0')
 BAUD_RATE = 115200
 
 FLIGHT_LOG_PATH = "flight.log"  # wiped at the start of each run, then appended to

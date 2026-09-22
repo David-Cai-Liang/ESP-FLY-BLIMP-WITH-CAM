@@ -38,7 +38,8 @@ namespace StateMachineConfig {
   const float TURN_RATE_SETTLE = PI / 7;
   const float TURN_DEADBAND_RAD = PI / 7;
   const float TURN_MAX_POWER = 255;                     // mirrors MOTOR_MAX in blimp.ino
-  const float GYRO_BIAS_RAD_PER_SEC = 0;
+  // (Gyro bias is no longer a constant here — IMU measures it at boot and
+  // re-trims it in flight; see IMU.h.)
 
   // Waypoint turn sequence (radians to turn at each successive waypoint)
   // {95*PI/180, 95*PI/180, 95*PI/180, 95*PI/180}
@@ -64,14 +65,15 @@ class StateMachine {
 public:
   // Runs one step of the autonomy state machine.
   //   vData:    latest vision blob data (cx, cy, w, h)
-  //   iData:    latest IMU data
+  //   yaw:      gyro-derived yaw state (integrated heading + bias-corrected
+  //             rate), sampled at IMU_SAMPLE_HZ independently of this loop
   //   yawError: degrees of yaw needed to center the target
   //             (+ => target is right of center)
   //   pitchError: degrees of pitch needed to center the target
   //             (+ => target is down of center)
   // Returns the motor outputs for this step (pre-constrain values; the
   // caller is expected to clamp to [0, MOTOR_MAX]) and updates currentState().
-  MotorData update(const VisionData &vData, const IMUData &iData, float yawError, float pitchError);
+  MotorData update(const VisionData &vData, const YawState &yaw, float yawError, float pitchError);
 
   // The sub-state resulting from the most recent update() call.
   uint8_t currentState() const { return state_; }
@@ -80,12 +82,15 @@ public:
 private:
   uint8_t state_ = STATE_SEARCHING;
 
-  // Waypoint turn state (persists across update() calls)
+  // Waypoint turn state (persists across update() calls). Progress through a
+  // turn is the difference between the IMU's integrated heading now and its
+  // value when the turn was committed, so drift is bounded by one turn's
+  // duration rather than accumulating across the flight.
   int waypointIndex_ = 0;
+  float turnStartYawRad_ = 0;
   float turnedSoFar_ = 0;
   bool turnInProgress_ = false;
   int currUpwardPower_ = DEFAULT_UPWARD_POWER;
-  unsigned long lastTurnStepMs_ = 0;
   int closeEnoughFrameCount_ = 0;  // consecutive frames seen with w*h > TURNING_AREA
 
   // Wiggle-search state (persists across update() calls; currently unused)

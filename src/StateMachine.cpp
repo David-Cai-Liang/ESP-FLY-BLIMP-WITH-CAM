@@ -35,7 +35,7 @@ static DifferentialCorrection applyDifferentialCorrection(int primary, int secon
 }
 
 
-MotorData StateMachine::update(const VisionData &vData, const IMUData &iData, float yawError, float pitchError) {
+MotorData StateMachine::update(const VisionData &vData, const YawState &yaw, float yawError, float pitchError) {
   MotorData out;
   out.m1 = out.m4 = DEFAULT_FORWARD_POWER;
   state_ = STATE_SEARCHING;
@@ -46,18 +46,15 @@ MotorData StateMachine::update(const VisionData &vData, const IMUData &iData, fl
   if (turnInProgress_) {
     state_ = STATE_TURNING;
 
-    unsigned long nowMs = millis();
-    unsigned long dtMs = nowMs - lastTurnStepMs_;
-    if (dtMs > 200) dtMs = 200;
-    lastTurnStepMs_ = nowMs;
+    // Heading is integrated by the IMU sampler at IMU_SAMPLE_HZ, so progress
+    // is just the delta since the turn was committed — no integration here,
+    // and no dependence on however long the camera took this frame.
+    turnedSoFar_ = yaw.yawRad - turnStartYawRad_;
 
-    float rate = iData.tz - GYRO_BIAS_RAD_PER_SEC;
-    turnedSoFar_ += rate * (dtMs / 1000.0f);
+    float turnYawError = wrapPI(WAYPOINT_LIST[waypointIndex_] - turnedSoFar_);
+    int correction = (int)((fabs(turnYawError) - TURN_DEADBAND_RAD) * TURN_KP);
 
-    float yawError = wrapPI(WAYPOINT_LIST[waypointIndex_] - turnedSoFar_);
-    int correction = (int)((fabs(yawError) - TURN_DEADBAND_RAD) * TURN_KP);
-
-    if (yawError >= 0) {
+    if (turnYawError >= 0) {
       DifferentialCorrection r = applyDifferentialCorrection(out.m1, out.m4, correction);
       out.m1 = r.primary;
       out.m4 = r.secondary;
@@ -67,10 +64,10 @@ MotorData StateMachine::update(const VisionData &vData, const IMUData &iData, fl
       out.m1 = r.secondary;
     }
     // Control Yaw Rate
-    out.m1 -= TURN_KD * iData.tz;
-    out.m4 += TURN_KD * iData.tz;
+    out.m1 -= TURN_KD * yaw.rateRad;
+    out.m4 += TURN_KD * yaw.rateRad;
 
-    if (fabs(yawError) <= TURN_DEADBAND_RAD && fabs(iData.tz) <= TURN_RATE_SETTLE) {
+    if (fabs(turnYawError) <= TURN_DEADBAND_RAD && fabs(yaw.rateRad) <= TURN_RATE_SETTLE) {
       turnInProgress_ = false;
       waypointIndex_ = (waypointIndex_ + 1) % WAYPOINT_COUNT;
     }
@@ -105,8 +102,8 @@ MotorData StateMachine::update(const VisionData &vData, const IMUData &iData, fl
       }
 
       // Gyro-rate correction always applied while tracking
-      out.m1 -= STRAIGHT_KD * iData.tz;
-      out.m4 += STRAIGHT_KD * iData.tz;
+      out.m1 -= STRAIGHT_KD * yaw.rateRad;
+      out.m4 += STRAIGHT_KD * yaw.rateRad;
 
 
       // Pitch Control
@@ -119,8 +116,8 @@ MotorData StateMachine::update(const VisionData &vData, const IMUData &iData, fl
       state_ = STATE_TURNING;
       wiggleSearchActive_ = false;
       turnInProgress_ = true;
+      turnStartYawRad_ = yaw.yawRad;
       turnedSoFar_ = 0;
-      lastTurnStepMs_ = millis();
       closeEnoughFrameCount_ = 0;
     }
     // else {
