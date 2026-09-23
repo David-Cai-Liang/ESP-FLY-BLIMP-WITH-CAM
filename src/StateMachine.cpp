@@ -38,11 +38,10 @@ static DifferentialCorrection applyDifferentialCorrection(int primary, int secon
 MotorData StateMachine::update(const VisionData &vData, const IMUData &iData, float yawError, float pitchError) {
   MotorData out;
   out.m1 = out.m4 = DEFAULT_FORWARD_POWER;
-  state_ = STATE_SEARCHING;
-
   //Maintain Altitude
   out.m2 = max(0, currUpwardPower_);
   out.m3 = max(0, -currUpwardPower_);
+
   if (turnInProgress_) {
     state_ = STATE_TURNING;
 
@@ -111,7 +110,7 @@ MotorData StateMachine::update(const VisionData &vData, const IMUData &iData, fl
 
       // Pitch Control
       if (fabs(pitchError) > PITCH_DEADZONE_HALF_DEG) {
-        int correction = (int)((fabs(pitchError) - PITCH_DEADZONE_HALF_DEG) * PITCH_GAIN_PER_DEG);
+        int correction = (int)((pitchError - PITCH_DEADZONE_HALF_DEG) * PITCH_GAIN_PER_DEG);
         currUpwardPower_ = DEFAULT_UPWARD_POWER + correction;
       }
 
