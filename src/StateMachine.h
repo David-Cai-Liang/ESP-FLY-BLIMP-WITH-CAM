@@ -84,7 +84,7 @@ private:
   int waypointIndex_ = 0;
   float turnedSoFar_ = 0;
   bool turnInProgress_ = false;
-  int currUpwardPower_ = DEFAULT_UPWARD_POWER;
+  int currUpwardPower_ = StateMachineConfig::DEFAULT_UPWARD_POWER;
   unsigned long lastTurnStepMs_ = 0;
   int closeEnoughFrameCount_ = 0;  // consecutive frames seen with w*h > TURNING_AREA
 
