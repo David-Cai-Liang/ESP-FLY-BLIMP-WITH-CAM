@@ -43,16 +43,9 @@ static DifferentialCorrection applyDifferentialCorrection(int primary, int secon
 
 MotorData StateMachine::update(const VisionData &vData, const IMUData &iData, float yawError, float pitchError) {
   MotorData out;
-<<<<<<< HEAD
   FL = FR = DEFAULT_FORWARD_POWER;
   RT = DEFAULT_UPWARD_POWER;
   state_ = STATE_SEARCHING;
-=======
-  out.m1 = out.m4 = DEFAULT_FORWARD_POWER;
-  //Maintain Altitude
-  out.m2 = max(0, currUpwardPower_);
-  out.m3 = max(0, -currUpwardPower_);
->>>>>>> 4ac6f7bfdbb98c740b22c77695bfc2f7b5d0b95b
 
   if (turnInProgress_) {
     state_ = STATE_TURNING;
@@ -77,14 +70,8 @@ MotorData StateMachine::update(const VisionData &vData, const IMUData &iData, fl
       FR = r.primary;
       FL = r.secondary;
     }
-<<<<<<< HEAD
     FL -= TURN_KD * iData.tz;
     FR += TURN_KD * iData.tz;
-=======
-    // Control Yaw Rate
-    out.m1 -= TURN_KD * iData.tz;
-    out.m4 += TURN_KD * iData.tz;
->>>>>>> 4ac6f7bfdbb98c740b22c77695bfc2f7b5d0b95b
 
     if (fabs(yawError) <= TURN_DEADBAND_RAD && fabs(iData.tz) <= TURN_RATE_SETTLE) {
       turnInProgress_ = false;
@@ -127,14 +114,9 @@ MotorData StateMachine::update(const VisionData &vData, const IMUData &iData, fl
 
       // Pitch Control
       if (fabs(pitchError) > PITCH_DEADZONE_HALF_DEG) {
-<<<<<<< HEAD
         int correction = (int)((fabs(pitchError) - PITCH_DEADZONE_HALF_DEG) * PITCH_GAIN_PER_DEG);
         RT = max(0, DEFAULT_UPWARD_POWER + correction);
         RB = max(0, -(DEFAULT_UPWARD_POWER + correction));
-=======
-        int correction = (int)((pitchError - PITCH_DEADZONE_HALF_DEG) * PITCH_GAIN_PER_DEG);
-        currUpwardPower_ = DEFAULT_UPWARD_POWER + correction;
->>>>>>> 4ac6f7bfdbb98c740b22c77695bfc2f7b5d0b95b
       }
 
     } else if (turnConfirmed) {
