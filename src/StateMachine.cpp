@@ -1,6 +1,12 @@
 #include "StateMachine.h"
+#define FL out.m1
+#define FR out.m4
+#define RT out.m2
+#define RB out.m3
 
 using namespace StateMachineConfig;
+
+
 
 // Wraps an angle in radians to the range [-PI, PI).
 static float wrapPI(float angleRad) {
@@ -37,8 +43,8 @@ static DifferentialCorrection applyDifferentialCorrection(int primary, int secon
 
 MotorData StateMachine::update(const VisionData &vData, const IMUData &iData, float yawError, float pitchError) {
   MotorData out;
-  out.m1 = out.m4 = DEFAULT_FORWARD_POWER;
-  out.m2 = DEFAULT_UPWARD_POWER;
+  FL = FR = DEFAULT_FORWARD_POWER;
+  RT = DEFAULT_UPWARD_POWER;
   state_ = STATE_SEARCHING;
 
   if (turnInProgress_) {
@@ -56,16 +62,16 @@ MotorData StateMachine::update(const VisionData &vData, const IMUData &iData, fl
     int correction = (int)((fabs(yawError) - TURN_DEADBAND_RAD) * TURN_KP);
 
     if (yawError >= 0) {
-      DifferentialCorrection r = applyDifferentialCorrection(out.m1, out.m4, correction);
-      out.m1 = r.primary;
-      out.m4 = r.secondary;
+      DifferentialCorrection r = applyDifferentialCorrection(FL, FR, correction);
+      FL = r.primary;
+      FR = r.secondary;
     } else {
-      DifferentialCorrection r = applyDifferentialCorrection(out.m4, out.m1, correction);
-      out.m4 = r.primary;
-      out.m1 = r.secondary;
+      DifferentialCorrection r = applyDifferentialCorrection(FR, FL, correction);
+      FR = r.primary;
+      FL = r.secondary;
     }
-    out.m1 -= TURN_KD * iData.tz;
-    out.m4 += TURN_KD * iData.tz;
+    FL -= TURN_KD * iData.tz;
+    FR += TURN_KD * iData.tz;
 
     if (fabs(yawError) <= TURN_DEADBAND_RAD && fabs(iData.tz) <= TURN_RATE_SETTLE) {
       turnInProgress_ = false;
@@ -91,26 +97,26 @@ MotorData StateMachine::update(const VisionData &vData, const IMUData &iData, fl
       if (fabs(yawError) > YAW_DEADZONE_HALF_DEG) {
         int correction = (int)((fabs(yawError) - YAW_DEADZONE_HALF_DEG) * YAW_GAIN_PER_DEG);
         if (yawError > 0) {
-          DifferentialCorrection r = applyDifferentialCorrection(out.m4, out.m1, correction);
-          out.m4 = r.primary;
-          out.m1 = r.secondary;
+          DifferentialCorrection r = applyDifferentialCorrection(FR, FL, correction);
+          FR = r.primary;
+          FL = r.secondary;
         } else {
-          DifferentialCorrection r = applyDifferentialCorrection(out.m1, out.m4, correction);
-          out.m1 = r.primary;
-          out.m4 = r.secondary;
+          DifferentialCorrection r = applyDifferentialCorrection(FL, FR, correction);
+          FL = r.primary;
+          FR = r.secondary;
         }
       }
 
       // Gyro-rate correction always applied while tracking
-      out.m1 -= STRAIGHT_KD * iData.tz;
-      out.m4 += STRAIGHT_KD * iData.tz;
+      FL -= STRAIGHT_KD * iData.tz;
+      FR += STRAIGHT_KD * iData.tz;
 
 
       // Pitch Control
       if (fabs(pitchError) > PITCH_DEADZONE_HALF_DEG) {
         int correction = (int)((fabs(pitchError) - PITCH_DEADZONE_HALF_DEG) * PITCH_GAIN_PER_DEG);
-        out.m2 = max(0, DEFAULT_UPWARD_POWER + correction);
-        out.m3 = max(0, -(DEFAULT_UPWARD_POWER + correction));
+        RT = max(0, DEFAULT_UPWARD_POWER + correction);
+        RB = max(0, -(DEFAULT_UPWARD_POWER + correction));
       }
 
     } else if (turnConfirmed) {
@@ -142,9 +148,9 @@ MotorData StateMachine::update(const VisionData &vData, const IMUData &iData, fl
     //   int sweep = (int)(amplitude * sin(phase));
     //
     //   if (sweep >= 0) {
-    //     out.m1 -= sweep;
+    //     FL -= sweep;
     //   } else {
-    //     out.m4 -= (-sweep);
+    //     FR -= (-sweep);
     //   }
     // }
   }
